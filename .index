@@ -1,9 +1,11 @@
 ---
 type: ruby
-revision: 2013
+revision: 2014
 sources:
 - var
 authors:
+- name: Mal Skrylev
+  email: 3aHyga@gmail.com
 - name: 7rans
   email: transfire@gmail.com
 - name: Minero Aoki
@@ -23,11 +25,21 @@ requirements:
   - test
   development: true
   name: ae
+- groups:
+  - test
+  - development
+  development: true
+  name: pry
+- groups:
+  - test
+  - development
+  development: true
+  name: rake
 conflicts: []
 alternatives: []
 resources:
 - type: home
-  uri: http://rubyworks.github.com/setup
+  uri: http://github.com/rubyworks/setup
   label: Homepage
 - type: code
   uri: http://github.com/rubyworks/setup

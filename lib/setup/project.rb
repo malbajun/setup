@@ -25,19 +25,23 @@ module Setup
   # As of v5.1.0, Setup.rb no longer recognizes the VERSION file
   #
   class Project
+     attr_reader :options
 
     # Match used to determine the root dir of a project.
-    ROOT_MARKER = '{.index,setup.rb,.setup,lib/}'
+     ROOT_MARKER = '{.index,setup.rb,.setup,lib/,app/,Gemfile,*.gemspec}'
 
     #
-    def initialize
+    def initialize options = {}
+      @options  = options
+
       @dotindex_file = find('.index')
 
       @dotindex = YAML.load_file(@dotindex_file) if @dotindex_file
 
-      @name     = nil
-      @version  = nil
+      @name     = root_source.name
+      @version  = root_source.version
       @loadpath = ['lib']
+
 
       if @dotindex
         @name     = @dotindex['name']
@@ -81,20 +85,26 @@ module Setup
       )
     end
 
-    # Setup.rb uses `ext/**/extconf.rb` as convention for the location of
-    # compiled scripts.
-    def extconfs
-      @extconfs ||= Dir['ext/**/extconf.rb']
+    # Returns a source set
+    #
+    def sources
+       @sources ||= Setup::Source.search(rootdir, options)
+    end
+
+    # Returns a root source
+    #
+    def root_source
+      @root_source ||= sources.find { |source| source.is_a?(Setup::Source::Root) }
+    end
+
+    def has_gem?
+      sources.any? {|source| source.is_a?(Setup::Source::Gem) }
     end
 
     #
-    def extensions
-      @extensions ||= extconfs.collect{ |f| File.dirname(f) }
-    end
-
     #
-    def compiles?
-      !extensions.empty?
+    def compilable?
+      sources.any? { |source| source.compilable? }
     end
 
     #

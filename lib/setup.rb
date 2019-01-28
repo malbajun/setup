@@ -1,4 +1,6 @@
 require 'yaml'
 require 'setup/version'
 require 'setup/session'
-
+require 'setup/source'
+require 'setup/target'
+require 'setup/gemspec'
