@@ -1,4 +1,5 @@
 require 'setup/base'
+require 'rdoc'
 
 module Setup
 
@@ -19,7 +20,6 @@ module Setup
   # @deprecated Setup.rb no longer generates ri documentation, ever.
   #
   class Documentor < Base
-
     #
     def document
       return if config.no_doc
@@ -33,55 +33,47 @@ module Setup
     # @todo Should we run rdoc programmatically instead of shelling out?
     #
     def exec_ri
-      case config.type #installdirs
-      when 'home'
-        output = "--ri"
-      when 'site'
-        output = "--ri-site"
-      when 'std', 'ruby'
-        output  = "--ri-site"
-      else
-        abort "bad config: should not be possible -- type=#{config.type}"
-      end
 
-      opt = []
-      opt << "-U"
-      opt << "-q" #if quiet?
-      #opt << "-D" #if $DEBUG
-      opt << output
+      project.sources.reject { |s| s.doc_sourcefiles.empty? }.each do |source|
+        options = if source.is_a?(Setup::Source::Gem)
+          ["--ri"]
+        else
+          ["--ri-site"]
+        end | ['-q', '-o', source.ridir]
 
-      unless project.document
-        files = []
-        files << 'lib' if project.find('lib')
-        files << 'ext' if project.find('ext')
-      else
-        files = []
-        #files = File.read('.document').split("\n")
-        #files.reject!{ |l| l =~ /^\s*[#]/ || l !~ /\S/ }
-        #files.collect!{ |f| f.strip }
-      end
-
-      opt.concat(files)
-
-      opt.flatten!
-
-      cmd = "rdoc " + opt.join(' ')
-
-      if trial?
-        puts cmd
-      else
-        begin
-          success = system(cmd)
-          raise unless success
-          #require 'rdoc/rdoc'
-          #::RDoc::RDoc.new.document(opt)
-          io.puts "Ok ri." #unless quiet?
-        rescue Exception
-          $stderr.puts "ri generation failed"
-          $stderr.puts "command was: '#{cmd}'"
-          #$stderr.puts "proceeding with install..."
+        Dir.chdir(source.root) do
+          source.doc_sourcefiles.each do |dir|
+            if !documentate(options, dir)
+              documentate_files options, dir
+            end
+          end
         end
       end
+    end
+
+    def documentate_files options, dir
+      Dir.glob("#{dir}/**/*.{rb,h,c}").each do |file|
+        next if !File.file?(file)
+
+        documentate(options, file)
+      end
+    end
+
+    def documentate opts, file
+      begin
+        ::RDoc::RDoc.new.document(opts.dup << file)
+
+        true
+      rescue StandardError => e
+        $stderr.puts "ri generation to documentate '#{file}' is failed" unless quiet?
+        $stderr.puts "#{e.class}: #{e.message}\n\t#{e.backtrace.join("\n\t")}"
+      end
+    end
+
+    #
+    #
+    def dirs
+       project.sources.map { |source| source.root }.flatten
     end
 
     #
@@ -106,6 +98,8 @@ module Setup
       else
         files = []
         files << main  if main
+        files << 'config' if project.find('config')
+        files << 'app' if project.find('app')
         files << 'lib' if File.directory?('lib')
         files << 'ext' if File.directory?('ext')
       end
@@ -122,7 +116,7 @@ module Setup
 
       opt = []
       opt << "-U"
-      opt << "-q" #if quiet?
+      opt << "-q" if quiet?
       opt << "--op=#{output}"
       #opt << "--template=#{template}"
       opt << "--title=#{title}"
@@ -138,10 +132,8 @@ module Setup
         puts cmd 
       else
         begin
-          system(cmd)
-          #require 'rdoc/rdoc'
-          #::RDoc::RDoc.new.document(opt)
-          puts "Ok rdoc." unless quiet?
+          ::RDoc::RDoc.new.document(opt)
+          io.puts "Ok rdoc." unless quiet?
         rescue Exception
           puts "Fail rdoc."
           puts "Command was: '#{cmd}'"

@@ -5,9 +5,9 @@
 # Is this needed any more?
 class << File #:nodoc: all
 
-  unless respond_to?(:read)   # Ruby 1.6 and less
+  unless File.respond_to?(:read)   # Ruby 1.6 and less
 
-    def read(fname)
+    def read(fname, options = {})
       open(fname){ |f| return f.read }
     end
 

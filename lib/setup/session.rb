@@ -1,3 +1,4 @@
+require 'setup'
 require 'setup/core_ext'
 require 'setup/constants'
 require 'setup/project'
@@ -5,7 +6,7 @@ require 'setup/configuration'
 require 'setup/compiler'
 require 'setup/installer'
 require 'setup/tester'
-#require 'setup/documentor'
+require 'setup/documentor'
 require 'setup/uninstaller'
 
 module Setup
@@ -78,8 +79,8 @@ module Setup
     end
 
     #
-    def compile?
-      configuration.compile? && project.compiles?
+    def compilable?
+      configuration.compilable? && project.compilable?
     end
 
     # #  S E T U P  T A S K S  # #
@@ -87,15 +88,14 @@ module Setup
     # Run all tasks in sequence.
     #
     # * config
-    # * make
+    # * compile
     # * test      (optional)
     # * install
     #
     def all
-      #if compile?
-        config
-        compile
-      #end
+      config
+      compile
+
       if configuration.test?
         ok = test
         exit 1 unless ok
@@ -104,6 +104,18 @@ module Setup
       #if configuration.ri?
       #  document
       #end
+    end
+
+    # Run all build tasks in sequence.
+    #
+    # * config
+    # * compile
+    # * document
+    #
+    def build
+      config
+      compile
+      document
     end
 
     #
@@ -123,7 +135,7 @@ module Setup
 
     #
     def compile
-      if compile?
+      if compilable?
         log_header('Compile')
         compiler.configure
         #abort "must run 'setup config' first" unless configuration.exist?
@@ -150,11 +162,11 @@ module Setup
     end
 
     #
-    #def document
-    #  #return unless configuration.doc?
-    #  log_header('Document')
-    #  documentor.document
-    #end
+    def document
+      return unless configuration.doc?
+      log_header('Document')
+      documentor.document
+    end
 
     #
     def clean
@@ -166,6 +178,8 @@ module Setup
     def distclean
       log_header('Distclean')
       compiler.distclean
+      installer.distclean
+      project.gems.map(&:distclean)
     end
 
     #
@@ -189,7 +203,7 @@ module Setup
 
     #
     def project
-      @project ||= Project.new
+      @project ||= Project.new(mode: configuration.mode.to_sym)
     end
     #
     def configuration
@@ -208,9 +222,9 @@ module Setup
       @tester ||= Tester.new(project, configuration, options)
     end
     #
-    #def documentor
-    #  @documentor ||= Documentor.new(project, configuration, options)
-    #end
+    def documentor
+      @documentor ||= Documentor.new(project, configuration, options)
+    end
     #
     def uninstaller
       @uninstaller ||= Uninstaller.new(project, configuration, options)

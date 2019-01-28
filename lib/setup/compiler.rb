@@ -6,18 +6,13 @@ module Setup
   class Compiler < Base
 
     #
-    def compiles?
-      !extdirs.empty?
-      #extdirs.any?{ |dir| File.exist?(File.join(dir, 'extconf.rb')) }
-    end
-
     #
     def configure
       extdirs.each do |dir|
         Dir.chdir(dir) do
-          if File.exist?('extconf.rb') && !FileUtils.uptodate?('Makefile', ['extconf.rb'])
-            #load("extconf.rb", true)
-            ruby("extconf.rb")
+          if !FileUtils.uptodate?('Makefile', ['extconf.rb'])
+            puts "[#{dir}]$ ruby extconf.rb -- --use-system-libraries --enable-debug-build"
+            ruby("extconf.rb", '--', '--use-system-libraries', '--enable-debug-build')
           end
         end
       end
@@ -27,7 +22,9 @@ module Setup
     def compile
       extdirs.each do |dir|
         Dir.chdir(dir) do
+          puts "[#{dir}]$ make #{config.makeprog}"
           make
+          FileUtils.touch('gem.build_complete')
         end
       end
     end
@@ -50,17 +47,24 @@ module Setup
       end
     end
 
-    # TODO: get from project
+    #
+    #
     def extdirs
-      Dir['ext/**/*/{MANIFEST,extconf.rb}'].map do |f|
-        File.dirname(f)
-      end.uniq
+       extfiles.map { |extfile| File.dirname(extfile) }
     end
 
     #
-    def make(task=nil)
-      return unless File.exist?('Makefile')
-      bash(*[config.makeprog, task].compact)
+    #
+    def extfiles
+       project.sources.map { |source| source.extfiles }.flatten
+    end
+
+    #
+    #
+    def make task = nil
+       if File.exist?('Makefile')
+          bash(*[config.makeprog, task].compact)
+       end
     end
 
   end

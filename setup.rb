@@ -377,6 +377,9 @@ module Setup
     option :siteruby        , :path, 'directory for version-independent aux ruby libraries'
     option :siterubyver     , :path, 'directory for aux ruby libraries'
     option :siterubyverarch , :path, 'directory for aux ruby binaries'
+    option :gemruby         , :path, 'directory for version-independent gem ruby libraries'
+    option :gemrubyver      , :path, 'directory for gem ruby libraries'
+    option :gemrubyverarch  , :path, 'directory for gem ruby binaries'
     option :rubypath        , :prog, 'path to set to #! line'
     option :rubyprog        , :prog, 'ruby program used for installation'
     option :makeprog        , :prog, 'make program to compile ruby extentions'
@@ -387,8 +390,8 @@ module Setup
     option :no_ext          , :bool, 'compile/install ruby extentions'
     option :install_prefix  , :path, 'install to alternate root location'
     option :root            , :path, 'install to alternate root location'
-    option :installdirs     , :pick, 'install location mode (site,std,home)'  #, local)
-    option :type            , :pick, 'install location mode (site,std,home)'
+    option :installdirs     , :pick, 'install location mode (site,std,home,gem)'  #, local)
+    option :type            , :pick, 'install location mode (site,std,home,gem)'
     ::RbConfig::CONFIG.each do |key,val|
       next if key == "configure_args"
       name = key.to_s.downcase
@@ -496,6 +499,9 @@ module Setup
       when 'site'
         @rbdir = siterubyver      #'$siterubyver'
         @sodir = siterubyverarch  #'$siterubyverarch'
+      when 'gem'
+        @rbdir = gemrubyver      #'$gemrubyver'
+        @sodir = gemrubyverarch  #'$gemrubyverarch'
       when 'home'
         self.prefix = File.join(home, '.local')  # TODO: Use XDG
         @rbdir = nil #'$libdir/ruby'
@@ -555,6 +561,27 @@ module Setup
     end
     def siterubyverarch=(path)
       @siterubyverarch = pathname(path)
+    end
+    def gemruby
+      @gemruby ||= RBCONFIG['gemdir']
+    end
+    def gemruby=(path)
+      path = pathname(path)
+      @gemrubyver = gemrubyver.sub(gemruby, path)
+      @gemrubyverarch = gemrubyverarch.sub(gemruby, path)
+      @gemruby = path
+    end
+    def gemrubyver
+      @gemrubyver ||= RBCONFIG['gemlibdir']
+    end
+    def gemrubyver=(path)
+      @gemrubyver = pathname(path)
+    end
+    def gemrubyverarch
+      @gemrubyverarch ||= RBCONFIG['gemarchdir']
+    end
+    def gemrubyverarch=(path)
+      @gemrubyverarch = pathname(path)
     end
     def bindir
       @bindir || File.join(prefix, base_bindir)
@@ -1245,7 +1272,7 @@ module Setup
       parser.on('--prefix PATH', 'install to alternate root location') do |val|
         configuration.install_prefix = val
       end
-      parser.on('--type TYPE', "install location mode (site,std,home)") do |val|
+      parser.on('--type TYPE', "install location mode (site,std,home,gem)") do |val|
         configuration.type = val
       end
       parser.on('-t', '--[no-]test', "run pre-installation tests") do |bool|

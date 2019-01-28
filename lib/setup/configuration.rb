@@ -3,6 +3,7 @@ require 'fileutils'
 require 'erb'
 require 'yaml'
 require 'shellwords'
+require 'setup'
 require 'setup/core_ext'
 require 'setup/constants'
 
@@ -42,6 +43,7 @@ module Setup
     option :docdir          , :path, 'directory for documentation'
     option :rbdir           , :path, 'directory for ruby scripts'
     option :sodir           , :path, 'directory for ruby extentions'
+    option :ridir           , :path, 'directory for ruby ri documents'
     option :sysconfdir      , :path, 'directory for system configuration files'
     option :localstatedir   , :path, 'directory for local state data'
 
@@ -51,6 +53,8 @@ module Setup
     option :siteruby        , :path, 'directory for version-independent aux ruby libraries'
     option :siterubyver     , :path, 'directory for aux ruby libraries'
     option :siterubyverarch , :path, 'directory for aux ruby binaries'
+
+    option :gemhome         , :path, 'home directory for ruby gem libraries'
 
     option :rubypath        , :prog, 'path to set to #! line'
     option :rubyprog        , :prog, 'ruby program used for installation'
@@ -71,19 +75,34 @@ module Setup
     #option :testrunner      , :pick, 'Runner to use for testing (auto|console|tk|gtk|gtk2)'
 
     option :install_prefix  , :path, 'install to alternate root location'
-    option :root            , :path, 'install to alternate root location'
+    option :root            , :path, 'a chroot location, defaulting to <install_prefix>'
 
-    option :installdirs     , :pick, 'install location mode (site,std,home)'  #, local)
-    option :type            , :pick, 'install location mode (site,std,home)'
+    option :installdirs     , :pick, 'install location mode (auto,site,std,home,gem)'
+    option :type            , :pick, 'install location mode (auto,site,std,home,gem)'
+    option :mode            , :pick, 'file accounting mode (usual,lust)'
+
+    option :pre             , :pick, 'issue rake tasks from the comma-separated list before the action'
+
+    # custom property
+    #
+    def install_prefix
+      @install_prefix ||= '/'
+    end
+
+    # custom property
+    #
+    def root
+      @root ||= install_prefix || '/'
+    end
 
     # Turn all of CONFIG into methods.
 
     ::RbConfig::CONFIG.each do |key,val|
       next if key == "configure_args"
-      name = key.to_s.downcase
+      name = key.to_s.downcase.to_sym
       #name = name.sub(/^--/,'')
       #name = name.gsub(/-/,'_')
-      define_method(name){ val }
+      define_method(name){ val } if !self.instance_methods.include?(name)
     end
 
     # Turn all of CONFIG["configure_args"] into methods.
@@ -114,6 +133,7 @@ module Setup
       initialize_defaults
       initialize_environment
       initialize_configfile unless values[:reset]
+#      initialize_gemfile
 
       values.each{ |k,v| __send__("#{k}=", v) }
       yield(self) if block_given?
@@ -131,13 +151,12 @@ module Setup
     # not be run, ri documentation will not be generated, but
     # the +doc/+ directory will be installed.
     def initialize_defaults
-      self.type    = 'site'
+      self.type    = 'auto'
+      self.mode    = 'usual'
       self.no_ri   = true
       self.no_test = true
-      self.no_doc  = true
+      self.no_doc  = false
       self.no_ext  = false
-      #@rbdir = siterubyver      #'$siterubyver'
-      #@sodir = siterubyverarch  #'$siterubyverarch'
     end
 
     # Get configuration from environment.
@@ -157,11 +176,15 @@ module Setup
         dat = YAML.load(txt)
         dat.each do |k, v|
           next if 'type' == k
+          next if 'mode' == k
           next if 'installdirs' == k
           k = k.gsub('-','_')
-          __send__("#{k}=", v)
+          __send__("#{k}=", v) if respond_to?("#{k}=")
         end
         # do these last
+        if dat['mode']
+          self.mode = dat['mode']
+        end
         if dat['type']
           self.type = dat['type']
         end
@@ -173,17 +196,16 @@ module Setup
       end
     end
 
-    #def initialize_configfile
-    # begin
-    #    File.foreach(CONFIG_FILE) do |line|
-    #      k, v = *line.split(/=/, 2)
-    #      k.gsub!('-','_')
-    #      __send__("#{k}=",v.strip) #self[k] = v.strip
-    #    end
-    #  rescue Errno::ENOENT
-    #    raise Error, $!.message + "\n#{File.basename($0)} config first"
-    #  end
-    #end
+    # Load configuration.
+    def initialize_gemfile
+      gemfile = has_gemfile? && IO.read('Gemfile') || ""
+
+      if has_gemspec? && gemfile !~ /gemspec/
+        gemfile << "gemspec\n"
+      end
+
+      File.open('Gemfile', 'w') { |f| f.puts(gemfile) }
+    end
 
     attr_accessor :reset
 
@@ -239,36 +261,56 @@ module Setup
       @base_localstatedir ||= subprefix('localstatedir')
     end
 
+    # Returns pure bindir
+    def _bindir
+      @_bindir ||= RbConfig::CONFIG['bindir']
+    end
+
+    # Returns true when ruby bindir matches root bindir
+    def prefix_changed?
+      bindir != _bindir
+    end
+
 
     # #  C O N F I G U R A T I O N  # #
 
     #
+    def mode
+      @mode ||= 'usual'
+    end
+
+    #
+    def mode=(val)
+      @mode = val
+    end
+
     def type
-      @type ||= 'site'
+      @type ||= 'auto'
     end
 
     #
     def type=(val)
       @type = val
       case val.to_s
+      when 'auto'
       when 'std', 'ruby'
         @rbdir = librubyver       #'$librubyver'
         @sodir = librubyverarch   #'$librubyverarch'
+        @ridir = librubyri        #'$librubyri'
       when 'site'
         @rbdir = siterubyver      #'$siterubyver'
         @sodir = siterubyverarch  #'$siterubyverarch'
+        @ridir = siterubyri       #'$siterubyri'
+      when 'gem'
+        @rbdir = gemrubylib       #'$gemrubylib'
+        @sodir = gemrubyextarch   #'$gemrubyextarch'
+        @ridir = gemrubyri        #'$gemrubyri'
       when 'home'
         self.prefix = File.join(home, '.local')  # TODO: Use XDG
         @rbdir = nil #'$libdir/ruby'
         @sodir = nil #'$libdir/ruby'
-      #when 'local'
-      #  rbdir = subprefix(librubyver, '')
-      #  sodir = subprefix(librubyverarch, '')
-      #  self.prefix = '/usr/local' # FIXME: how?
-      #  self.rbdir  = File.join(prefix, rbdir) #'$libdir/ruby'
-      #  self.sodir  = File.join(prefix, sodir) #'$libdir/ruby'
       else
-        raise Error, "bad config: use type=(std|site|home) [#{val}]"
+        raise Error, "bad config: use type=(auto|ruby|site|home|gem) [#{val}]"
       end
     end
 
@@ -277,13 +319,6 @@ module Setup
 
     # Alias for `#type=`.
     alias_method :installdirs=, :type=
-
-    #
-    alias_method :install_prefix, :root
-
-    #
-    alias_method :install_prefix=, :root=
-
 
     # Path prefix of target environment
     def prefix
@@ -328,6 +363,11 @@ module Setup
       @librubyverarch = pathname(path)
     end
 
+    # Get default directory for RI documentation in a system for core modules
+    def librubyri
+      @librubyri ||= RBCONFIG['ridir']
+    end
+
     # Directory for version-independent aux ruby libraries
     def siteruby
       @siteruby ||= RBCONFIG['sitedir']
@@ -359,6 +399,43 @@ module Setup
     # Set directory for aux arch ruby binaries
     def siterubyverarch=(path)
       @siterubyverarch = pathname(path)
+    end
+
+    # Get default directory for RI documentation in a system for site modules
+    def siterubyri
+       @siterubyri ||= File.join(RBCONFIG['ridir'], 'site')
+    end
+
+    # Returns gem home folder, if not specified sets and returns the default one
+    def gemhome
+      @gemhome ||= ::Gem.paths.home
+    end
+
+    # Set gem home folder
+    def gemhome=(path)
+      @gemhome = pathname(path)
+    end
+
+    # Ruby gem libraries folder
+    def gemrubylib
+#      @gemrubylib ||= File.join(gemhome, 'gems', Setup::Gem.new.fullname, "lib")
+    end
+
+    # Ruby gem ri documentation folder
+    def gemrubyri
+#      @gemrubyri ||= File.join(gemhome, 'doc', Setup::Gem.new.fullname, "ri")
+    end
+
+    # Ruby gem extensions folder
+    def gemrubyextarch
+#      @gemrubyextarch ||= (
+#        arch = [ ::Gem.platforms.last.cpu, ::Gem.platforms.last.os ].join('-')
+#        File.join(gemhome, 'extensions', arch, ::Gem.extension_api_version, Setup::Gem.new.fullname))
+    end
+
+    # Ruby gem specifications folder
+    def gemrubyspec
+      @gemrubyspec ||= File.join(gemhome, 'specifications')
     end
 
     # Directory for commands
@@ -551,7 +628,7 @@ module Setup
     #def testrunner      = 'auto' # needed?
 
     # Compile native extensions?
-    def compile?
+    def compilable?
       !no_ext
     end
 
@@ -612,6 +689,15 @@ module Setup
       File.exist?(CONFIG_FILE)
     end
 
+    # Does the gemfile file exist?
+    def has_gemfile?
+      File.exist?('Gemfile')
+    end
+
+    # Does the gemfile file exist?
+    def has_gemspec?
+      Dir.foreach('.').select { |f| f =~ /.gemspec$/ }.any?
+    end
     #
     #def show
     #  fmt = "%-20s %s\n"

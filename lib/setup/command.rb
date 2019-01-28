@@ -1,5 +1,6 @@
 require 'setup/session'
 require 'optparse'
+require 'rake' rescue nil
 
 module Setup
 
@@ -34,8 +35,10 @@ module Setup
 
     task 'show'     , "show current configuration"
     task 'all'      , "config, compile and install"
+    task 'build'    , "run config, compile, and document consequently"
     task 'config'   , "save/customize configuration settings"
     task 'compile'  , "compile ruby extentions"
+    task 'document' , "generate ri/rdoc documentation"
     task 'test'     , "run test suite"
     task 'install'  , "install project files"
     task 'clean'    , "does `make clean' for each extention"
@@ -71,10 +74,20 @@ module Setup
         optparse_config(parser, options)
       when 'compile'
         optparse_compile(parser, options)
+      when 'build'
+        optparse_config(parser, options)
+        optparse_compile(parser, options)
+        optparse_document(parser, options)
+      when 'document'
+        optparse_document(parser, options)
+      when 'test'
+        optparse_test(parser, options)
       when 'install'
         optparse_install(parser, options)
       when 'all'
         optparse_all(parser, options)
+      when 'show'
+        optparse_show(parser, options)
       end
       optparse_common(parser, options)
 
@@ -96,6 +109,8 @@ module Setup
         $stderr.puts "(#{RUBY_VERSION} #{RUBY_PLATFORM})"
       end
 
+      pre(task)
+
       begin
         session.__send__(task)
       rescue Error => err
@@ -108,10 +123,28 @@ module Setup
       puts unless session.quiet?
     end
 
+    def pre task
+      if defined? Rake
+        begin
+          load('Rakefile')
+        rescue Exception => e
+          $stderr.puts("Failed to load Rakefile due to error #{e.class}: #{e.message}")
+        end
+
+        configuration.pre&.map do |task_name|
+          if task = Rake::Task[task_name]
+            task.invoke
+          else
+            $stderr.puts "Error: Unknown rake task '#{task_name}'"
+          end
+        end
+      end
+    end
+
     # Setup session.
 
     def session
-      @session ||= Session.new(:io=>$stdout)
+      @session ||= Session.new(io: $stdout)
     end
 
     # Setup configuration. This comes from the +session+ object.
@@ -123,6 +156,17 @@ module Setup
     #
     def optparse_header(parser, options)
       parser.banner = "USAGE: #{File.basename($0)} [command] [options]"
+      parser.separator ""
+      parser.separator "Commands:"
+      self.class.tasks.each do |name, desc|
+        parser.separator "\t" + name + " " * (29 - name.size) + desc
+      end
+    end
+
+    # Setup options for +show+ task.
+
+    def optparse_show(parser, options)
+      optparse_all(parser, options)
     end
 
     # Setup options for +all+ task.
@@ -130,13 +174,9 @@ module Setup
     def optparse_all(parser, options)
       optparse_config(parser, options)
       optparse_compile(parser, options)
-      optparse_install(parser, options)  # TODO: why was this remarked out ?
-      #parser.on("-t", "--[no-]test", "run tests (default is --no-test)") do |val|
-      #  configuration.no_test = val
-      #end
-      #parser.on("--[no-]doc", "generate ri/yri documentation (default is --doc)") do |val|
-      #  configuration.no_doc = val
-      #end
+      optparse_document(parser, options)
+      optparse_install(parser, options)
+      optparse_test(parser, options)
     end
 
     # Setup options for +config+ task.
@@ -188,29 +228,52 @@ module Setup
     def optparse_install(parser, options)
       parser.separator ''
       parser.separator 'Install options:'
+      parser.on('--install_prefix PATH', 'alternate install prefix location') do |val|
+        configuration.install_prefix = val
+      end
+      parser.on('--root PATH', 'alternate chroot location') do |val|
+        configuration.root = val
+      end
       # install prefix overrides target prefix when installing
       parser.on('--prefix PATH', 'install to alternate root location') do |val|
         configuration.install_prefix = val
       end
       # type can override config
-      parser.on('--type TYPE', "install location mode (site,std,home)") do |val|
+      parser.on('--type TYPE', "install location mode (auto,site,ruby,home,gem)") do |val|
         configuration.type = val
       end
       # test can be override config
       parser.on('-t', '--[no-]test', "run pre-installation tests") do |bool|
         configuration.test = bool
       end
+      # file accounting mode
+      parser.on('-m', '--mode MODE', "file accounting mode (usual,lust)") do |bool|
+        configuration.mode = bool
+      end
+    end
+
+    # Setup options for +document+ task.
+
+    def optparse_document(parser, options)
+      parser.separator ""
+      parser.separator "Document options:"
+      parser.on("--[no-]doc", "generate ri/yri documentation (default is --doc)") do |val|
+        configuration.no_doc = val
+      end
     end
 
     # Setup options for +test+ task.
 
-    #def optparse_test(parser, options)
-    #  parser.separator ""
-    #  parser.separator "Test options:"
-    #  parser.on("--runner TYPE", "Test runner (auto|console|gtk|gtk2|tk)") do |val|
-    #    ENV['RUBYSETUP_TESTRUNNER'] = val
-    #  end
-    #end
+    def optparse_test(parser, options)
+      parser.separator ""
+      parser.separator "Test options:"
+      parser.on("-t", "--[no-]test", "run tests (default is --no-test)") do |val|
+        configuration.no_test = val
+      end
+      #parser.on("--runner TYPE", "Test runner (auto|console|gtk|gtk2|tk)") do |val|
+      #  ENV['RUBYSETUP_TESTRUNNER'] = val
+      #end
+    end
 
     # Setup options for +uninstall+ task.
 
@@ -246,6 +309,11 @@ module Setup
 
       parser.on("--debug", "Turn on debug mode") do |val|
         $DEBUG = true
+      end
+
+      # pre action
+      parser.on('--pre LIST', 'Issue rake tasks from the comma-separated list before the action') do |val|
+        configuration.pre = val.split(',')
       end
 
       parser.separator ""
