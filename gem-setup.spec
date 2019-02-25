@@ -1,23 +1,24 @@
-%define     pkgname setup
+%define        pkgname setup
 
-Name:       ruby-%pkgname
-Version:    5.999.0
-Release:    alt1
+Name:          gem-%pkgname
+Version:       5.999.0
+Release:       alt1
 
-Summary:    Ruby's Classic Site Installer
-Group:      Development/Ruby
-License:    BSD 2-clause Simplified License
-Url:        https://github.com/rubyworks/setup
-# VCS:      https://github.com/rubyworks/setup.git
-Packager:   Ruby Maintainers Team <ruby@packages.altlinux.org>
-BuildArch:  noarch
+Summary:       Ruby's Classic Site Installer
+Group:         Development/Ruby
+License:       BSD 2-clause Simplified License
+Url:           https://github.com/rubyworks/setup
+# VCS:         https://github.com/rubyworks/setup.git
+Packager:      Ruby Maintainers Team <ruby@packages.altlinux.org>
+BuildArch:     noarch
 
-Source:     %pkgname-%version.tar
+Source:        %name-%version.tar
+Patch:         patch.patch
 
 BuildRequires(pre): rpm-build-ruby
-BuildRequires: ruby-hoe gem(olddoc)
+BuildRequires: gem(olddoc)
 
-Requires: ruby-pry
+Requires:      ruby-pry
 
 %description
 Every well practiced Rubyist is aware of Minero Aoki's ever setup.rb script.
@@ -31,19 +32,20 @@ Just instruct one's users to install Ruby Setup (gem install setup) and go from
 there. As long as a project is setup.rb compliant, as most are, then there is
 little to nothing it's developer must do.
 
-%package doc
-Summary: Documentation files for %name
-Group: Documentation
-BuildArch: noarch
+%package       doc
+Summary:       Documentation files for %name
+Group:         Documentation
+BuildArch:     noarch
 
-%description doc 
+%description   doc
 Documentation files for %name.
 
 %prep
-%setup -n %pkgname-%version
+%setup
+%patch -p1
 %update_setup_rb
 
-%build 
+%build
 %ruby_config
 %ruby_build
 mv .gemspec %pkgname.gemspec
@@ -66,4 +68,4 @@ mv .gemspec %pkgname.gemspec
 
 %changelog
 * Fri Jan 25 2019 Pavel Skrylev <majioa@altlinux.org> 5.999.0-alt1
-- Initial gemified build for Sisyphus.
+- Initial gemified build for Sisyphus with usage Ruby Policy 2.0.
