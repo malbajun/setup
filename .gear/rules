@@ -1,1 +1,2 @@
 tar: @version@:. base=setup-@version@ name=setup-@version@
+copy: *patch

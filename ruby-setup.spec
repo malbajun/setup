@@ -1,7 +1,7 @@
 %define     pkgname setup
 
 Name:       ruby-%pkgname
-Version:    5.2.1pre0
+Version:    5.999.0
 Release:    alt1
 
 Summary:    Ruby's Classic Site Installer
@@ -15,6 +15,9 @@ BuildArch:  noarch
 Source:     %pkgname-%version.tar
 
 BuildRequires(pre): rpm-build-ruby
+BuildRequires: ruby-hoe gem(olddoc)
+
+Requires: ruby-pry
 
 %description
 Every well practiced Rubyist is aware of Minero Aoki's ever setup.rb script.
@@ -62,5 +65,5 @@ mv .gemspec %pkgname.gemspec
 %ruby_ri_sitedir/
 
 %changelog
-* Fri Jan 25 2019 Pavel Skrylev <majioa@altlinux.org> 5.2.1pre0-alt1
+* Fri Jan 25 2019 Pavel Skrylev <majioa@altlinux.org> 5.999.0-alt1
 - Initial gemified build for Sisyphus.
