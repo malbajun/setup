@@ -88,7 +88,7 @@ index 3cdd3b7..1bdd2eb 100644
        parser.separator "Inform options:"
  
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
-index 8087a0f..1979791 100644
+index 8087a0f..cd0befe 100644
 --- a/lib/setup/configuration.rb
 +++ b/lib/setup/configuration.rb
 @@ -75,7 +75,7 @@ module Setup
@@ -123,7 +123,7 @@ index 8087a0f..1979791 100644
 +    end
 +
 +    def current_alias= value
-+       aliases[current_source_name] = current_alias | value.split(/[:;,]/)
++       aliases[current_source_name] = current_alias | (value.is_a?(Array) && value || value.split(/[:;,]/))
 +    end
 +
 +    def current_alias
@@ -194,10 +194,10 @@ index 13472b9..379f0ea 100644
  
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
 new file mode 100644
-index 0000000..8183198
+index 0000000..32deaea
 --- /dev/null
 +++ b/lib/setup/deps.rb
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,177 @@
 +require 'setup'
 +
 +class Setup::Deps
@@ -299,13 +299,12 @@ index 0000000..8183198
 +   end
 +
 +   def deps_ruby_exec target
-+#      require 'pry'; binding.pry
 +      target.source.binfiles.map do |file|
 +         File.join(target.source.root, target.source.bindir, file)
 +      end.select do |file|
 +         File.exist?(file)
 +      end.map do |file|
-+         IO.read(file).split("\n").first
++         IO.read(file, mode: 'rb').split("\n").first
 +      end.uniq.map do |line|
 +         if match = /#!\s*(?<exec>\S+)/.match(line)
 +            match[:exec]
@@ -639,7 +638,7 @@ index 83164b9..ce7eaf5 100644
          end
        end
 diff --git a/lib/setup/project.rb b/lib/setup/project.rb
-index 378da3b..441bdfd 100644
+index 378da3b..4b39a1b 100644
 --- a/lib/setup/project.rb
 +++ b/lib/setup/project.rb
 @@ -27,7 +27,7 @@ module Setup
@@ -670,7 +669,7 @@ index 378da3b..441bdfd 100644
      end
  
      # The name of the package, used to install docs in system doc/ruby-{name}/ location.
-@@ -150,6 +153,37 @@ module Setup
+@@ -150,6 +153,40 @@ module Setup
        Dir.glob(File.join(rootdir, glob), flags).first
      end
  
@@ -678,21 +677,24 @@ index 378da3b..441bdfd 100644
 +    def chroot
 +       File.expand_path(config.install_prefix)
 +    end
- 
++
 +    def options
 +       @options.merge(chroot: chroot)
 +    end
 +
 +    def autoalias
 +       sources.each do |source|
-+          name = source.name.gsub(/[_-]+/, '-')
++          name = source.name.gsub(/[_\-\.]+/, '-')
 +          if name != source.name
 +             config.current_source_name = source.name
 +             config.current_alias = name
 +          end
++
++          # autoaliasing binaries
++          config.current_alias = source.binfiles
 +       end
 +    end
-+
+ 
 +      # Returns an install target
 +      def targets
 +         @targets ||= (
