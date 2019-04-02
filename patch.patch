@@ -376,7 +376,7 @@ index 0000000..32deaea
 +
 +end
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index a5c0c75..e6a0dc8 100644
+index a5c0c75..5a4400e 100644
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
 @@ -1,101 +1,80 @@
@@ -477,7 +477,7 @@ index a5c0c75..e6a0dc8 100644
 +         begin
 +            require 'bundler'
 +
-+            dsl = Bundler::Dsl.new
++            dsl = Dir.chdir(source.root) { Bundler::Dsl.new }
 +            dsl.eval_gemfile(gemfile)
 +            dsl
 +         rescue LoadError,
