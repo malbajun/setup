@@ -194,10 +194,10 @@ index 13472b9..379f0ea 100644
  
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
 new file mode 100644
-index 0000000..32deaea
+index 0000000..0feb66b
 --- /dev/null
 +++ b/lib/setup/deps.rb
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,180 @@
 +require 'setup'
 +
 +class Setup::Deps
@@ -209,7 +209,7 @@ index 0000000..32deaea
 +         proc { |target| target.source.valid? }                    => proc { |this, target| this.deps_gem_dsl(target.source.dsl) },
 +      },
 +      'bin' => {
-+         proc { |target| target.source.binfiles.any? }             => proc { |this, target| this.deps_ruby_exec(target) },
++         proc { |target| target.public_executables.any? }          => proc { |this, target| this.deps_ruby_exec(target) },
 +         proc { |target| target.source.binfiles.any? &&
 +                         target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_gem(target) },
 +      },
@@ -299,13 +299,16 @@ index 0000000..32deaea
 +   end
 +
 +   def deps_ruby_exec target
-+      target.source.binfiles.map do |file|
-+         File.join(target.source.root, target.source.bindir, file)
-+      end.select do |file|
-+         File.exist?(file)
++      target.public_executables.map do |file|
++         File.join(target.root, file)
 +      end.map do |file|
-+         IO.read(file, mode: 'rb').split("\n").first
-+      end.uniq.map do |line|
++         if File.symlink?(file)
++            realfile = File.readlink(file)
++            IO.read(File.join(target.root, realfile), mode: 'rb').split("\n").first
++         elsif File.exist?(file)
++            IO.read(file, mode: 'rb').split("\n").first
++         end
++      end.compact.uniq.map do |line|
 +         if match = /#!\s*(?<exec>\S+)/.match(line)
 +            match[:exec]
 +         else
@@ -638,7 +641,7 @@ index 83164b9..ce7eaf5 100644
          end
        end
 diff --git a/lib/setup/project.rb b/lib/setup/project.rb
-index 378da3b..4b39a1b 100644
+index 378da3b..1f3fccd 100644
 --- a/lib/setup/project.rb
 +++ b/lib/setup/project.rb
 @@ -27,7 +27,7 @@ module Setup
@@ -669,7 +672,7 @@ index 378da3b..4b39a1b 100644
      end
  
      # The name of the package, used to install docs in system doc/ruby-{name}/ location.
-@@ -150,6 +153,40 @@ module Setup
+@@ -150,6 +153,46 @@ module Setup
        Dir.glob(File.join(rootdir, glob), flags).first
      end
  
@@ -683,18 +686,24 @@ index 378da3b..4b39a1b 100644
 +    end
 +
 +    def autoalias
++       source_names = sources.map(&:name)
+ 
 +       sources.each do |source|
++          config.current_source_name = source.name
++
 +          name = source.name.gsub(/[_\-\.]+/, '-')
 +          if name != source.name
-+             config.current_source_name = source.name
 +             config.current_alias = name
 +          end
 +
-+          # autoaliasing binaries
-+          config.current_alias = source.binfiles
++          # autoaliasing binaries to the source name but when no other source name matches to a binfile
++          config.current_alias = source.binfiles - (source.binfiles & source_names)
 +       end
++
++       # turn current source name to common
++       config.current_source_name = nil
 +    end
- 
++
 +      # Returns an install target
 +      def targets
 +         @targets ||= (
@@ -988,7 +997,7 @@ index d031874..e860bc1 100644
 +   end
  end
 diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
-index 3327a5e..822502e 100644
+index 3327a5e..1c0f160 100644
 --- a/lib/setup/target/gem.rb
 +++ b/lib/setup/target/gem.rb
 @@ -1,16 +1,20 @@
@@ -1001,7 +1010,7 @@ index 3327a5e..822502e 100644
 -   def source
 -      gem
 +   def root
-+      source.root
++      chroot
 +   end
 +
 +   def public_executables
