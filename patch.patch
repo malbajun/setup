@@ -253,10 +253,18 @@ index 8087a0f..60c1bf7 100644
  
      # Turn all of CONFIG into methods.
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
-index 13472b9..379f0ea 100644
+index 13472b9..7acb8f2 100644
 --- a/lib/setup/core_ext.rb
 +++ b/lib/setup/core_ext.rb
-@@ -36,9 +36,9 @@ module Kernel
+@@ -1,6 +1,7 @@
+ #
+ # Ruby Extensions
+ #
++Encoding.default_external = Encoding::UTF_8
+ 
+ # Is this needed any more?
+ class << File #:nodoc: all
+@@ -36,13 +37,15 @@ module Kernel
    def ` cmd
      tokens = cmd.split(/\s+/)
  
@@ -267,8 +275,15 @@ index 13472b9..379f0ea 100644
 +#    $stderr.puts tokens
 +#    $stderr.puts '===='
  
++#    olderr = $stderr
++#    $stderr = File.open(File::NULL, 'w')
      res = __old_system_call(cmd)
  
+-    if tokens.first == 'git' && tokens[1] == 'ls-files' && res.empty?
++    if res.empty? && tokens.first == 'git' && tokens[1] == 'ls-files'
+       mask = tokens[2..-1].select { |t| t !~ /^-/ }.first&.sub('*', '**/*') || '**/*'
+       list = Dir.glob(mask, File::FNM_DOTMATCH).select { |x| File.file?(x) }
+       char = tokens.include?('-z') && "\0" || "\n"
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
 new file mode 100644
 index 0000000..8be1420
