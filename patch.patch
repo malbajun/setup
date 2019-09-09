@@ -2682,7 +2682,7 @@ index 0bbff97..82bfc13 100644
        end
     end
 diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
-index 3327a5e..92291b9 100644
+index 3327a5e..c5fb2db 100644
 --- a/lib/setup/target/gem.rb
 +++ b/lib/setup/target/gem.rb
 @@ -1,38 +1,52 @@
@@ -2730,7 +2730,7 @@ index 3327a5e..92291b9 100644
 -   def bindir
 -      File.exist?(exedir) && exedir || File.join(home, 'gems', gem.fullname, 'bin')
 +   def exedir
-+      File.exist?(_exedir) && _exedir || File.join(home, 'gems', source.fullname, 'bin')
++      File.join(home, 'gems', source.fullname, source.exedirs.first || 'bin')
     end
  
 -   def extdir
@@ -2751,7 +2751,7 @@ index 3327a5e..92291b9 100644
     end
  
     def specdir
-@@ -43,25 +57,57 @@ class Setup::Target::Gem
+@@ -43,25 +57,53 @@ class Setup::Target::Gem
        RbConfig::CONFIG['mandir']
     end
  
@@ -2782,35 +2782,32 @@ index 3327a5e..92291b9 100644
 -      Dir.glob(File.join(chroot, bindir, '*')).map { |file| /^#{chroot}(?<pure>.*)/.match(file)[:pure] }
 +   def exefiles
 +      Dir.glob(File.join(chroot, exedir, '*')).map { |file| /^#{chroot}(?<pure>.*)/.match(file)[:pure] }
-+   end
-+
+    end
+ 
+-   protected
 +   def lexefiles
 +      Dir.glob(File.join(chroot, lexedir, '*')).map { |file| /^#{chroot}(?<pure>.*)/.match(file)[:pure] }
 +   end
-+
+ 
+-   def exedir
+-      File.join(home, 'gems', gem.fullname, 'exe')
 +   def chroot
 +      options[:chroot] || '/'
-+   end
-+
+    end
+ 
+-   def initialize gem: raise, root: nil, home: ENV['GEM_HOME'] || ::Gem.paths.home
+-      @gem = gem
+-      @root = root
 +   def is_lib_separated?
 +      false
 +   end
 +
 +   def is_log_separated?
 +      false
-    end
- 
-    protected
- 
--   def exedir
--      File.join(home, 'gems', gem.fullname, 'exe')
-+   def _exedir
-+      File.join(home, 'gems', source.fullname, 'exe')
-    end
- 
--   def initialize gem: raise, root: nil, home: ENV['GEM_HOME'] || ::Gem.paths.home
--      @gem = gem
--      @root = root
++   end
++
++   protected
++
 +   def initialize source: raise, home: ENV['GEM_HOME'] || ::Gem.paths.home, options: {}
 +      @source = source
 +      @options = options
