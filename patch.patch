@@ -308,7 +308,7 @@ index c7aae2b..b2c8fdd 100644
  
  end
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
-index 8087a0f..1c40732 100644
+index 8087a0f..68abf3d 100644
 --- a/lib/setup/configuration.rb
 +++ b/lib/setup/configuration.rb
 @@ -46,6 +46,7 @@ module Setup
@@ -468,6 +468,15 @@ index 8087a0f..1c40732 100644
      end
  
      # Turn all of CONFIG into methods.
+@@ -266,7 +389,7 @@ module Setup
+ 
+     # Base libdir
+     def base_libdir
+-      @base_libdir ||= subprefix('libdir')
++      @base_libdir ||= subprefix('libexecdir')
+     end
+ 
+     #
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
 index 13472b9..d77ee22 100644
 --- a/lib/setup/core_ext.rb
@@ -2902,7 +2911,7 @@ index bca880b..6abd4e8 100644
  
     def spec_path *args
 diff --git a/lib/setup/target/site.rb b/lib/setup/target/site.rb
-index e90e40b..f0bfb6b 100644
+index e90e40b..5ce81ac 100644
 --- a/lib/setup/target/site.rb
 +++ b/lib/setup/target/site.rb
 @@ -1,30 +1,46 @@
@@ -2954,7 +2963,7 @@ index e90e40b..f0bfb6b 100644
 +   end
 +
 +   def datadir
-+      File.join(RbConfig::CONFIG['libdir'], source.name)
++      File.join(RbConfig::CONFIG['libexecdir'], source.name)
 +   end
 +
 +   def confdir
