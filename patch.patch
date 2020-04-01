@@ -478,7 +478,7 @@ index 8087a0f..68abf3d 100644
  
      #
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
-index 13472b9..d77ee22 100644
+index 13472b9..a694781 100644
 --- a/lib/setup/core_ext.rb
 +++ b/lib/setup/core_ext.rb
 @@ -1,6 +1,7 @@
@@ -504,7 +504,7 @@ index 13472b9..d77ee22 100644
        mask = tokens[2..-1].select { |t| t !~ /^-/ }.first&.sub('*', '**/*') || '**/*'
        list = Dir.glob(mask, File::FNM_DOTMATCH).select { |x| File.file?(x) }
        char = tokens.include?('-z') && "\0" || "\n"
-@@ -52,3 +49,98 @@ module Kernel
+@@ -52,3 +49,70 @@ module Kernel
      end
    end
  end
@@ -573,34 +573,6 @@ index 13472b9..d77ee22 100644
 +
 +   def make_singular
 +      to_s.make_singular.to_sym
-+   end
-+end
-+
-+class Dir
-+   class << self
-+      alias :__glob :glob
-+
-+      def glob pattern_in, flags = 0, options = {}
-+         if (flags & File::FNM_EXTGLOB) > 0
-+            re = /!\((.*)\)/
-+            tokens, matches = pattern_in.actsplit(re)
-+            matches_re = matches.map { |x| "^(?!.*#{x.match(re)[1].gsub('|*/', '').gsub('\\\\','\\')})" }
-+            tokens_re = tokens.map { |x| x.gsub(/\*+/, '.*').gsub(/\//, '\/?') }
-+            match_re = tokens_re.actjoin(matches_re)
-+
-+            list = __glob(tokens.join('**'), flags, options).select do |file|
-+               file =~ /#{match_re}/
-+            end
-+
-+            if base = options[:base]
-+               list.select { |r| r[0...base.size] == base }
-+            else
-+               list
-+            end
-+         else
-+            __glob(pattern_in, flags, options)
-+         end
-+      end
 +   end
 +end
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
