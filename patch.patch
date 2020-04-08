@@ -308,7 +308,7 @@ index c7aae2b..b2c8fdd 100644
  
  end
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
-index 8087a0f..e062ec9 100644
+index 8087a0f..5b9359d 100644
 --- a/lib/setup/configuration.rb
 +++ b/lib/setup/configuration.rb
 @@ -46,6 +46,7 @@ module Setup
@@ -418,7 +418,7 @@ index 8087a0f..e062ec9 100644
 +    end
 +
 +    def prefixes
-+       @prefixes ||= {}
++       @prefixes ||= default_prefixes
 +    end
 +
 +    def current_prefix= value
@@ -430,7 +430,7 @@ index 8087a0f..e062ec9 100644
 +    end
 +
 +    def suffixes
-+       { nil => ['doc', 'devel'] }
++       @suffixes ||= default_suffixes
 +    end
 +
 +    def affixes
@@ -491,6 +491,21 @@ index 8087a0f..e062ec9 100644
      end
  
      #
+@@ -753,6 +890,14 @@ module Setup
+ 
+   private
+ 
++    def default_prefixes
++      { nil => [ 'gem' ] }
++    end
++
++    def default_suffixes
++      { nil => ['doc', 'devel'] }
++    end
++
+     def pathname(path)
+       path.gsub(%r<\\$([^/]+)>){ self[$1] }
+     end
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
 index 13472b9..a694781 100644
 --- a/lib/setup/core_ext.rb
