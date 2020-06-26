@@ -2,7 +2,7 @@
 
 Name:          gem-%pkgname
 Version:       5.999.3
-Release:       alt15
+Release:       alt16
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
 License:       BSD-2-Clause
@@ -15,9 +15,7 @@ Source:        %name-%version.tar
 Patch:         patch.patch
 
 BuildRequires(pre): rpm-build-ruby
-BuildRequires: gem(olddoc)
 
-Requires:      ruby-pry
 Requires:      chrpath
 Requires:      setup-rb
 
@@ -89,6 +87,16 @@ Documentation files for %gemname gem.
 
 
 %changelog
+* Fri Jun 26 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.3-alt16
+- + actor module
+- + 3 actors: copy, link, touch
+- + dep-source command line key, to define a name of a source for the
+    specified used source, and set to show requires
+- + append and skip lists support in source gem and gemfile
+- + check to wheither the gemfile is exist, if no skip install
+- * installation of compiled modules by actors
+- - unnecessary deps
+
 * Wed Apr 08 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.3-alt15
 - - explicit use of prefixes key in build section
 

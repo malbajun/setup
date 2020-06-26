@@ -1,3 +1,12 @@
+diff --git a/TODO b/TODO
+new file mode 100644
+index 0000000..2dfbe7c
+--- /dev/null
++++ b/TODO
+@@ -0,0 +1,3 @@
++- add disable source (for ruby-rubygems-update)
++- add return to common space on load (for ruby-rails)
++- add doc compilation only over included lib files
 diff --git a/lib/hoe/setup.rb b/lib/hoe/setup.rb
 deleted file mode 100644
 index 45db22d..0000000
@@ -16,6 +25,136 @@ index 45db22d..0000000
 -   end
 -rescue LoadError
 -end
+diff --git a/lib/setup/actor.rb b/lib/setup/actor.rb
+new file mode 100644
+index 0000000..13eaa26
+--- /dev/null
++++ b/lib/setup/actor.rb
+@@ -0,0 +1,50 @@
++require 'yaml'
++
++module Setup::Actor
++   class << self
++      def actors
++         @actors ||= Setup::Actor.constants.map do |x|
++            [ "#{x}".downcase, Setup::Actor.const_get(x) ]
++         end.to_h
++      end
++
++      def scheme
++         @scheme ||= YAML.load(IO.read(File.join(File.dirname(__FILE__), "scheme.erb.yaml")))
++      end
++
++      def config
++         @config ||= ObjectSpace.each_object(Setup::Configuration).first
++      end
++
++      def procline file
++         scheme.map.with_index do |rule, index|
++            match = rule['match']
++
++            if !match || /#{match}$/ =~ file
++               rule['proc'].map do |data|
++                  # TODO cache it by match or index
++                  context_in = ERB.new(data['context'].to_yaml)
++                  c = yield(data['actor'], context_in)
++                  c.merge('$' => actors[data['actor']])
++               end
++            end
++         end.compact
++      end
++
++      def objectize target
++         target.source.trees do |kind, h|
++            h.map do |dir, files|
++               files.map do |file|
++                  procline(file) do |actor, context_in|
++                     YAML.load(context_in.result(binding))
++                  end
++               end
++            end
++         end.flatten
++      end
++   end
++end
++
++require 'setup/actor/link'
++require 'setup/actor/touch'
++require 'setup/actor/copy'
+diff --git a/lib/setup/actor/copy.rb b/lib/setup/actor/copy.rb
+new file mode 100644
+index 0000000..a195986
+--- /dev/null
++++ b/lib/setup/actor/copy.rb
+@@ -0,0 +1,19 @@
++module Setup::Actor::Copy
++   class NoDestinationDirError < StandardError ;end
++   class NoSourceDirError < StandardError ;end
++   class NoFileError < StandardError ;end
++
++   class << self
++      def apply context
++         target_dir = context['target_dir'] || raise(NoDestinationDirError)
++         source_dir = context['source_dir'] || raise(NoSourceDirError)
++         file = context['file'] || raise(NoFileError)
++
++         target_file = File.join(context['target_prefix'] || '', target_dir, file)
++         source_file = File.join(source_dir, file)
++         FileUtils.mkdir_p(File.dirname(target_file))
++         FileUtils.cp(source_file, target_file)
++         $stdout.puts "  #{source_file} => #{target_file}"
++      end
++   end
++end
+diff --git a/lib/setup/actor/link.rb b/lib/setup/actor/link.rb
+new file mode 100644
+index 0000000..321bd7f
+--- /dev/null
++++ b/lib/setup/actor/link.rb
+@@ -0,0 +1,20 @@
++module Setup::Actor::Link
++   class NoDestinationDirError < StandardError ;end
++   class NoSourceDirError < StandardError ;end
++   class NoFileError < StandardError ;end
++
++   class << self
++      def apply context
++         target_dir = context['target_dir'] || raise(NoDestinationDirError)
++         source_dir = context['source_dir'] || raise(NoSourceDirError)
++         file = context['file'] || raise(NoFileError)
++
++         target_file = File.join(context['target_prefix'] || '', target_dir, file)
++         source_file = File.join(source_dir, file)
++         FileUtils.mkdir_p(File.dirname(target_file))
++         FileUtils.rm_rf(target_file)
++         FileUtils.ln_s(source_file, target_file, force: true)
++         $stdout.puts "  #{source_file} -> #{target_file}"
++      end
++   end
++end
+diff --git a/lib/setup/actor/touch.rb b/lib/setup/actor/touch.rb
+new file mode 100644
+index 0000000..b134ede
+--- /dev/null
++++ b/lib/setup/actor/touch.rb
+@@ -0,0 +1,17 @@
++module Setup::Actor::Touch
++   class NoDestinationDirError < StandardError ;end
++   class NoSourceDirError < StandardError ;end
++   class NoFileError < StandardError ;end
++
++   class << self
++      def apply context
++         target_dir = context['target_dir'] || raise(NoDestinationDirError)
++         file = context['file'] || raise(NoFileError)
++
++         target_file = File.join(context['target_prefix'] || '', target_dir, file)
++         FileUtils.mkdir_p(File.dirname(target_file))
++         FileUtils.touch(target_file)
++         $stdout.puts "  >> #{target_file}"
++      end
++   end
++end
 diff --git a/lib/setup/base.rb b/lib/setup/base.rb
 index efed90d..205df9a 100644
 --- a/lib/setup/base.rb
@@ -58,7 +197,7 @@ index efed90d..205df9a 100644
  end
 -
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
-index 3cdd3b7..04917a5 100644
+index 3cdd3b7..b3ca092 100644
 --- a/lib/setup/command.rb
 +++ b/lib/setup/command.rb
 @@ -48,6 +48,8 @@ module Setup
@@ -131,7 +270,7 @@ index 3cdd3b7..04917a5 100644
        # pre action
        parser.on('--pre LIST', 'Issue rake tasks from the comma-separated list before the action') do |val|
          configuration.pre = val.split(',')
-@@ -329,11 +337,56 @@ module Setup
+@@ -329,11 +337,61 @@ module Setup
          configuration.gem_version_replace = val
        end
  
@@ -183,6 +322,11 @@ index 3cdd3b7..04917a5 100644
 +      # use source's set
 +      parser.on('--prefixes PREFIXES', 'Aliases thr current source with the new names') do |val|
 +        configuration.current_prefix = val
++      end
++
++      # use dependency source for the set
++      parser.on('--dep-source DEP_SOURCES', 'redefine dependency source for the set, default: auto') do |val|
++        configuration.current_dep_source = val
 +      end
 +
        parser.separator ""
@@ -308,7 +452,7 @@ index c7aae2b..b2c8fdd 100644
  
  end
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
-index 8087a0f..5b9359d 100644
+index 8087a0f..26f891d 100644
 --- a/lib/setup/configuration.rb
 +++ b/lib/setup/configuration.rb
 @@ -46,6 +46,7 @@ module Setup
@@ -339,7 +483,7 @@ index 8087a0f..5b9359d 100644
 +    option :aliases         , :pick, ''
 +    option :joins           , :pick, ''
 +    option :prefixes        , :pick, ''
-+
++    option :dep_sources     , :pick, ''
 +
 +    %w(dl ri inc ext lib app exe conf test man sup data docsrc log).map do |kind|
 +      funcs = <<-DEF
@@ -371,7 +515,7 @@ index 8087a0f..5b9359d 100644
      # custom property
      #
      def install_prefix
-@@ -131,8 +168,108 @@ module Setup
+@@ -131,8 +168,120 @@ module Setup
  
      # custom property
      #
@@ -429,6 +573,18 @@ index 8087a0f..5b9359d 100644
 +       prefixes[current_source_name] || prefixes[nil] || []
 +    end
 +
++    def dep_sources
++       @dep_sources ||= default_dep_sources
++    end
++
++    def current_dep_source= value
++       @dep_sources = dep_sources.merge(current_set => { current_source_name => value.split(/[:;,]/) })
++    end
++
++    def current_dep_source
++       dep_sources[current_source_name] || dep_sources[nil] || []
++    end
++
 +    def suffixes
 +       @suffixes ||= default_suffixes
 +    end
@@ -482,7 +638,7 @@ index 8087a0f..5b9359d 100644
      end
  
      # Turn all of CONFIG into methods.
-@@ -266,7 +403,7 @@ module Setup
+@@ -266,7 +415,7 @@ module Setup
  
      # Base libdir
      def base_libdir
@@ -491,10 +647,19 @@ index 8087a0f..5b9359d 100644
      end
  
      #
-@@ -753,6 +890,14 @@ module Setup
+@@ -753,6 +902,23 @@ module Setup
  
    private
  
++    def default_dep_sources
++      { 
++        'lib' => { nil => [ 'auto' ] },
++        'bin' => { nil => [ 'auto' ] },
++        'doc' => { nil => [ 'auto' ] },
++        'devel' => { nil => [ 'auto' ] },
++      }
++    end
++
 +    def default_prefixes
 +      { nil => [ 'gem' ] }
 +    end
@@ -606,10 +771,10 @@ index 13472b9..a694781 100644
 +end
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
 new file mode 100644
-index 0000000..ff6b9fd
+index 0000000..c90af51
 --- /dev/null
 +++ b/lib/setup/deps.rb
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,191 @@
 +require 'setup'
 +
 +class Setup::Deps
@@ -618,25 +783,25 @@ index 0000000..ff6b9fd
 +   REQS = {
 +      'lib' => {
 +         proc { |target| target.source.compilable? }               => proc { |this| this.deps_ruby_version },
-+         proc { |target| target.source.valid? }                    => proc { |this, target| this.deps_gem_dsl(target.source.dsl) },
++         proc { |target| target.source.valid? }                    => proc { |this, target| this.deps_dyno(target.source, 'lib', :dsl) },
 +      },
 +      'bin' => {
 +         proc { |target| target.public_executables.any? }          => proc { |this, target| this.deps_ruby_exec(target) },
 +         proc { |target| target.source.exefiles.any? &&
-+                         target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_gem(target) },
++                         target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_dyno(target.source, 'bin') },
 +      },
 +      'doc' => {
-+         proc { |target| target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_gem(target) },
++         proc { |target| target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_dyno(target.source, 'doc') },
 +      },
 +      'devel' => {
 +         proc { |target| target.source.inctree.any? &&
-+                         target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_gem(target) },
++                         target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_dyno(target.source, 'devel') },
 +      }
 +   }
 +
 +   PROVS = {
 +      'lib' => {
-+         proc { |target| target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_gem_ext(target) },
++         proc { |target| target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_gem_ext(target.source) },
 +      },
 +      'bin' => {
 +         proc { |target| target.public_executables.any? }          => proc { |this, target| this.deps_execs(target) },
@@ -700,13 +865,25 @@ index 0000000..ff6b9fd
 +      "ruby(#{RbConfig::CONFIG['ruby_version']})"
 +   end
 +
-+   def deps_gem target
-+      [ "gem(#{target.source.name})", target.source.version ].compact.join(' = ')
++   def deps_gem source
++      [ "gem(#{source.name})", source.version ].compact.join(' = ')
 +   end
 +
-+   def deps_gem_ext target
++   def deps_gem_ext source
 +      %w(gem ruby-gem rubygem).map do |kind|
-+         "#{kind}(#{target.source.name}) = #{target.source.version}"
++         "#{kind}(#{source.name}) = #{source.version}"
++      end
++   end
++
++   def deps_dyno source, set, kind = nil
++      root = project.config.dep_sources[set]
++      name = (root[source.name] || root[nil]).first
++      if name == 'auto'
++         kind == :dsl && deps_gem_dsl(source.dsl) || deps_gem(source)
++      else
++         project.select_source(name).map do |source|
++            deps_gem_dsl(source.dsl)
++         end
 +      end
 +   end
 +
@@ -740,7 +917,7 @@ index 0000000..ff6b9fd
 +
 +      method = method("target_#{type}")
 +
-+#      require 'pry'; binding.pry
++      # require 'pry'; binding.pry
 +      deps = targets.map do |target|
 +         $stderr.puts "  - [#{target.source.name}]"
 +
@@ -788,7 +965,6 @@ index 0000000..ff6b9fd
 +      @project = project
 +      @options = options
 +   end
-+
 +end
 diff --git a/lib/setup/documentor.rb b/lib/setup/documentor.rb
 index 84f51c3..864e26b 100644
@@ -845,10 +1021,10 @@ index 84f51c3..864e26b 100644
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
 old mode 100644
 new mode 100755
-index a5c0c75..8e91f90
+index a5c0c75..b0389b9
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
-@@ -1,101 +1,95 @@
+@@ -1,101 +1,100 @@
  require 'fileutils'
 +require 'tempfile'
  
@@ -866,7 +1042,7 @@ index a5c0c75..8e91f90
 -  class DSL
 -    # class TooManyGemspecsError < StandardError; end
 +   # attributes
-+   attr_reader :source, :replace_list
++   attr_reader :source, :replace_list, :skip_list, :append_list
  
 -    DEFAULT_GROUP_NAME = :development
 +   def gemfile
@@ -943,6 +1119,24 @@ index a5c0c75..8e91f90
 -        gem.spec.dependencies
 -      else
 -        local_deps_for :all
+-      end
+-    end
+-
+-    def ruby
+-      type = dsl&.instance_variable_get(:@ruby_version)&.engine || "ruby"
+-      version = gem.spec.required_ruby_version ||
+-                Gem::Requirement.new(dsl&.instance_variable_get(:@ruby_version)&.engine_versions) ||
+-                ">= 0"
+-
+-      { type: type, version: version }
+-    end
+-
+-    def rubygems
+-      { version: gem.spec.required_rubygems_version || ">= 0" }
+-    end
+-
+-  end
+-
 +         begin
 +            require 'bundler'
 +
@@ -960,11 +1154,11 @@ index a5c0c75..8e91f90
 +   end
 +
 +   def deps
-+      deps_but(source.deps(:runtime), replace_list)
++      deps_but(source.deps(:runtime), replace_list, skip_list, append_list)
 +   end
 +
 +   def all_deps
-+      deps_but(source.deps, replace_list)
++      deps_but(source.deps, replace_list, skip_list, append_list)
 +   end
 +
 +   def ruby
@@ -981,7 +1175,7 @@ index a5c0c75..8e91f90
 +
 +   def to_ruby
 +      spec = source.spec.dup
-+      spec.dependencies.replace(deps_but(source.deps, replace_list))
++      spec.dependencies.replace(deps_but(source.deps, replace_list, skip_list, append_list))
 +      spec.to_ruby
 +   end
 +
@@ -994,44 +1188,33 @@ index a5c0c75..8e91f90
 +                   "require: #{dep.autorequire.any? &&
 +                             "[" + dep.autorequire.map { |r| r.inspect }.join(', ') + "]" ||
 +                             "false"}" || nil
-+         g = (dep.groups || []) - [ :default ]
-+         groups = g.any? && "group: %i(#{dep.groups.join("\n")})" || nil
-+         [ "gem '#{dep.name}'", reqs, autoreq, groups ].compact.join(', ')
++         groups = dep.respond_to?(:groups) && dep.groups || []
++         g = groups - [ :default ]
++         group_list = g.any? && "group: %i(#{groups.join("\n")})" || nil
++         [ "gem '#{dep.name}'", reqs, autoreq, group_list ].compact.join(', ')
 +      end.join("\n")
 +   end
 +
 +   protected
 +
-+   def deps_but deps, replace_list
++   def deps_but deps, replace_list, skip_list, append_list
 +      deps.map do |dep|
++         next if skip_list.include?(dep.name)
++
 +         new_req = replace_list.reduce(nil) do |s, (name, req)|
 +            s || name == dep.name && req
 +         end
 +
 +         new_req && Gem::Dependency.new(dep.name, Gem::Requirement.new([new_req]), dep.type) || dep
-       end
--    end
--
--    def ruby
--      type = dsl&.instance_variable_get(:@ruby_version)&.engine || "ruby"
--      version = gem.spec.required_ruby_version ||
--                Gem::Requirement.new(dsl&.instance_variable_get(:@ruby_version)&.engine_versions) ||
--                ">= 0"
--
--      { type: type, version: version }
--    end
--
--    def rubygems
--      { version: gem.spec.required_rubygems_version || ">= 0" }
--    end
--
--  end
++      end.compact | append_list
 +   end
- 
++
 +   #
-+   def initialize source: raise, replace_list: nil
++   def initialize source: raise, replace_list: nil, skip_list: nil, append_list: nil
 +      @source = source
 +      @replace_list = replace_list || {}
++      @skip_list = skip_list || []
++      @append_list = append_list || []
 +   end
  end
 diff --git a/lib/setup/gemspec.rb b/lib/setup/gemspec.rb
@@ -1276,10 +1459,16 @@ index 03478de..2b858ac 100644
  
        def fix_preloaded_for file
 diff --git a/lib/setup/installer.rb b/lib/setup/installer.rb
-index 83164b9..35fcc5c 100644
+index 83164b9..a12cb4f 100644
 --- a/lib/setup/installer.rb
 +++ b/lib/setup/installer.rb
-@@ -8,40 +8,9 @@ module Setup
+@@ -1,4 +1,5 @@
+ require 'setup/base'
++require 'setup/actor'
+ 
+ module Setup
+ 
+@@ -8,40 +9,9 @@ module Setup
    #
    class Installer < Base
  
@@ -1323,7 +1512,7 @@ index 83164b9..35fcc5c 100644
      #
      def install_prefix
        config.install_prefix
-@@ -51,132 +20,141 @@ module Setup
+@@ -51,132 +21,151 @@ module Setup
      # Install package.
      def install
        Dir.chdir(rootdir) do
@@ -1331,27 +1520,32 @@ index 83164b9..35fcc5c 100644
 -        install_ext
 -        install_lib
 -        install_data
--        install_man
--        install_ri
++        install_exe
++        #_install :dl
++        _install :lib
+         install_man
+         install_ri
 -        install_include
 -#        install_etc
--        install_gemspec
++        _install :inc
++        _install :app
++        _install :log
++        _install :state
++        _install :test
++        _install :sup
++        _install :conf
++        install_data
+         install_gemspec
 -#        prune_install_record
-+       install_exe
-+       _install :dl
-+       _install :lib
-+       install_man
-+       install_ri
-+       _install :inc
-+       _install :app
-+       _install :log
-+       _install :state
-+       _install :test
-+       _install :sup
-+       _install :conf
-+       install_data
-+       install_gemspec
-+       install_gemfile
++        install_gemfile
++
++        io.puts "* scheme" unless quiet?
++        targets.each do |target|
++          io.puts "{#{target.source.name}}" unless quiet?
++          Setup::Actor.objectize(target).each do |context|
++            context['$'].apply(context)
++          end
++        end
        end
      end
  
@@ -1451,6 +1645,8 @@ index 83164b9..35fcc5c 100644
 -          io.puts "  - [#{target.source.name}] in #{target.source.datadir}" unless quiet?
 -          novel_install_files(target.source.datafiles, target.datadir, options)
 +          if is_external
++            #require 'pry'
++            #binding.pry
 +            novel_install_files(target.send("#{kind}dir"),
 +                                target.datadir,
 +                                options.merge(mode: 0755,
@@ -1527,17 +1723,17 @@ index 83164b9..35fcc5c 100644
 -        end
 -      end
 -    end
--
--    def install_include
--      io.puts "* include ->" unless quiet?
 +        next if !target.source.ritree.any?
  
--      targets.each do |target|
--        next if !target.source.includefiles.any?
+-    def install_include
+-      io.puts "* include ->" unless quiet?
 +        target.source.ritree.each do |dir, files|
 +          Dir.chdir(File.join(target.source.root, dir)) do
 +            io.puts "  % #{target.source.name} < #{dir}" unless quiet?
  
+-      targets.each do |target|
+-        next if !target.source.includefiles.any?
+-
 -        Dir.chdir(File.join(target.source.root, target.source.includedir)) do
 -          io.puts "  - [#{target.source.name}] in #{target.source.includedir}" unless quiet?
 -          target_dir = File.join(target.includedir, target.source.name)
@@ -1547,7 +1743,7 @@ index 83164b9..35fcc5c 100644
          end
        end
      end
-@@ -211,13 +189,13 @@ module Setup
+@@ -211,13 +200,13 @@ module Setup
      # Install specification.
      #
      def install_gemspec
@@ -1564,7 +1760,7 @@ index 83164b9..35fcc5c 100644
                                target.specdir,
                                options.merge(mode: 0644,
                                              as: "#{target.source.fullname}.gemspec"))
-@@ -225,6 +203,22 @@ module Setup
+@@ -225,6 +214,24 @@ module Setup
        end
      end
  
@@ -1574,7 +1770,9 @@ index 83164b9..35fcc5c 100644
 +      io.puts "* {gemfile} ->" unless quiet?
 +
 +      targets.each do |target|
-+        if target.source.is_a?(Setup::Source::Gemfile)
++        if (target.source.is_a?(Setup::Source::Gemfile) or
++            target.source.is_a?(Setup::Source::Gem) and
++            target.source.gemfile_path)
 +          io.puts "  %#{target.source.name}" unless quiet?
 +
 +          novel_install_files([target.source.gemfile_path],
@@ -1587,7 +1785,7 @@ index 83164b9..35fcc5c 100644
      #
      def distclean
        %w(SetupConfig .gemspecs).each { |f| FileUtils.rm_rf(f) }
-@@ -296,7 +290,8 @@ module Setup
+@@ -296,15 +303,16 @@ module Setup
      end
  
      # Novel proc to install project files.
@@ -1596,8 +1794,17 @@ index 83164b9..35fcc5c 100644
 +      source_files = [ source_files_in ].flatten
        chroot = options[:chroot]
  
- #        require 'pry'; binding.pry
-@@ -314,6 +309,7 @@ module Setup
+-#        require 'pry'; binding.pry
+       source_files.each do |file|
+         name = File.basename(options[:as] || file)
+         dir = File.dirname(options[:as] || options[:dir] || file)
+ 
+         if options[:symlink]
++           #require 'pry'; binding.pry
+            dest_file_in = File.expand_path(File.join(dest_dir, name))
+         else
+            dest_file_in = File.expand_path(File.join(dest_dir, dir, name))
+@@ -314,6 +322,7 @@ module Setup
          FileUtils.mkdir_p(File.dirname(dest_file))
          if options[:symlink]
            io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
@@ -1605,7 +1812,7 @@ index 83164b9..35fcc5c 100644
            FileUtils.ln_s(file, dest_file, force: true)
          elsif options[:shebang]
            io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
-@@ -329,8 +325,8 @@ module Setup
+@@ -329,8 +338,8 @@ module Setup
         content = IO.binread(file)
         lines_in = content.split("\n")
  
@@ -1616,7 +1823,7 @@ index 83164b9..35fcc5c 100644
            File.open(dest_file, "wb") { |f| f.write(lines.join("\n")) }
            FileUtils.chmod(mode, dest_file)
         else
-@@ -338,34 +334,35 @@ module Setup
+@@ -338,34 +347,35 @@ module Setup
         end
      end
  
@@ -1679,7 +1886,7 @@ index 83164b9..35fcc5c 100644
      # Install project files.
      def install_files(source_files, dest_dir, options = {})
 diff --git a/lib/setup/project.rb b/lib/setup/project.rb
-index 378da3b..4ac147c 100644
+index 378da3b..25c3f15 100644
 --- a/lib/setup/project.rb
 +++ b/lib/setup/project.rb
 @@ -27,12 +27,12 @@ module Setup
@@ -1766,7 +1973,7 @@ index 378da3b..4ac147c 100644
      # Returns a root source
      #
      def root_source
-@@ -150,6 +168,46 @@ module Setup
+@@ -150,6 +168,50 @@ module Setup
        Dir.glob(File.join(rootdir, glob), flags).first
      end
  
@@ -1778,13 +1985,13 @@ index 378da3b..4ac147c 100644
 +    def options
 +       @options.merge(chroot: chroot)
 +    end
-+
+ 
 +    def autoalias
 +       source_names = sources.map(&:name)
 +
 +       sources.each do |source|
 +          config.current_source_name = source.name
- 
++
 +          name = source.name.gsub(/[_\-\.]+/, '-')
 +          if name != source.name
 +             config.current_alias = name
@@ -1797,6 +2004,10 @@ index 378da3b..4ac147c 100644
 +       # turn current source name to common
 +       config.current_source_name = nil
 +    end
++
++      def select_source name
++         ObjectSpace.each_object(Setup::Source::Base).select { |x| x.name == name }
++      end
 +
 +      # Returns an install target
 +      def targets
@@ -1814,6 +2025,32 @@ index 378da3b..4ac147c 100644
 +      end
 +  end
  end
+diff --git a/lib/setup/scheme.erb.yaml b/lib/setup/scheme.erb.yaml
+new file mode 100644
+index 0000000..120011c
+--- /dev/null
++++ b/lib/setup/scheme.erb.yaml
+@@ -0,0 +1,20 @@
++---
++ - match: \.so$
++   proc:
++    - context:
++         source_dir: <%= File.join(target.source.root, dir) %>
++         target_dir: <%= target.dldir %>
++         target_prefix: <%= File.expand_path(config.install_prefix) %>
++         file: <%= file %>
++      actor: copy
++    - context:
++         source_dir: <%= target.dldir %>
++         target_dir: <%= File.join(target.require_libdir) %>
++         target_prefix: <%= File.expand_path(config.install_prefix) %>
++         file: <%= file %>
++      actor: link
++    - context:
++         target_dir: <%= target.dldir %>
++         target_prefix: <%= File.expand_path(config.install_prefix) %>
++         file: <%= File.join(File.dirname(file), 'gem.build_complete') %>
++      actor: touch
 diff --git a/lib/setup/session.rb b/lib/setup/session.rb
 index 9269e07..4ac8f99 100644
 --- a/lib/setup/session.rb
@@ -1888,7 +2125,7 @@ index 9269e07..4ac8f99 100644
      # #  S U P P O R T  # #
    
 diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
-index e779bf7..6c013d7 100644
+index e779bf7..48a3420 100644
 --- a/lib/setup/source/base.rb
 +++ b/lib/setup/source/base.rb
 @@ -1,7 +1,119 @@
@@ -2012,7 +2249,7 @@ index e779bf7..6c013d7 100644
  
     def fullname
        @fullname ||= root.split('/').last
-@@ -19,147 +131,181 @@ class Setup::Source::Base
+@@ -19,147 +131,187 @@ class Setup::Source::Base
           version)
     end
  
@@ -2027,7 +2264,7 @@ index e779bf7..6c013d7 100644
 -   def etcdir
 -      @etcdir ||= if_exist('etc')
 +   def dsl
-+      options[:dsl]
++      @dsl ||= options[:dsl] || Setup::DSL.new(source: self)
     end
  
 -   def libdir
@@ -2158,9 +2395,9 @@ index e779bf7..6c013d7 100644
 -      @binfiles ||= (
 -         dir = File.join(root, bindir)
 +   def deps groups_in = nil
-+      groups = groups_in && (
-+         [ groups_in ].flatten.map { |g| g == :runtime && (definition.groups - %i(development test)) || group }.flatten
-+         ) || definition.groups
++      groups = groups_in && ([ groups_in ].flatten.map do |g|
++            g == :runtime && (definition.groups - %i(development test)) || group
++         end.flatten) || definition.groups
  
 -         if File.exist?(dir)
 -            Dir.chdir(dir) do
@@ -2196,17 +2433,22 @@ index e779bf7..6c013d7 100644
     end
  
 -   # questionaries
--
--   def valid?
--      false
 +   def if_dir dir
 +      File.directory?(File.join(root, dir)) && dir || nil
++   end
+ 
+-   def valid?
+-      false
++   def default_ridir
++      ".ri.#{name}"
     end
  
 -   def compilable?
 -      extfiles.any?
-+   def default_ridir
-+      ".ri.#{name}"
++   def trees &block
++      GROUPS.map do |set|
++         yield(set, tree(set))
++      end
     end
  
 -   def to_h
@@ -2282,10 +2524,10 @@ index e779bf7..6c013d7 100644
     end
  end
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
-index 060264a..59df18c 100644
+index 060264a..6a21818 100644
 --- a/lib/setup/source/gem.rb
 +++ b/lib/setup/source/gem.rb
-@@ -5,27 +5,64 @@ require 'yaml'
+@@ -5,27 +5,76 @@ require 'yaml'
  
  class Setup::Source::Gem < Setup::Source::Base
     BIN_IGNORES = %w(test)
@@ -2359,10 +2601,22 @@ index 060264a..59df18c 100644
 +            self.new(source_options({ spec: spec }.merge(options_in)))
 +         end
 +      end
++   end
++
++   def gemfile
++      @gemfile ||= Setup::Source::Gemfile.new(
++        root: options[:root],
++        gem_version_replace: options[:gem_version_replace],
++        gem_skip_list: dsl.deps.map(&:name),
++        gem_append_list: [ self.dep ])
++   end
++
++   def dep
++      Gem::Dependency.new(name, Gem::Requirement.new(["~> #{version}"]), :runtime)
     end
  
     def fullname
-@@ -40,179 +77,36 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -40,179 +89,45 @@ class Setup::Source::Gem < Setup::Source::Base
        spec && spec.version.to_s
     end
  
@@ -2433,9 +2687,15 @@ index 060264a..59df18c 100644
 -
 -         File.directory?(fulldir) &&
 -         Dir.glob("#{fulldir}/**/*.{1,2,3,4,5,6,7,8}").select { |file| File.file?(file) }.any?
--      end
--   end
--
++   def gemfile_path
++      if gemfile.dsl.valid?
++         gemfile_file = Tempfile.new('Gemfile.')
++         gemfile_file.puts(gemfile.dsl.to_gemfile)
++         gemfile_file.rewind
++         gemfile_file.path
+       end
+    end
+ 
 -   def includedir
 -      extdir
 -   end
@@ -2522,10 +2782,8 @@ index 060264a..59df18c 100644
  
 -   def binfiles
 -      @binfiles ||= spec.executables.map { |x| x.split('/').last }
-+   def exttree
-+      @exttree ||= super { { '.' => spec.extensions.select { |file| /extconf\.rb$/ =~ file } } }
-    end
- 
+-   end
+-
 -   def manfiles
 -      @manfiles ||= mandir && (
 -         dir = File.join(root, mandir)
@@ -2535,10 +2793,8 @@ index 060264a..59df18c 100644
 -               Dir.glob("**/*.{1,2,3,4,5,6,7,8}").select { |file| File.file?(file) }
 -            end
 -         end || []) || []
-+   def exetree
-+      @exetree ||= super { Dir.chdir(root) do
-+            exedirs.map { |dir| [ dir, Dir.chdir(File.join(root, dir)) { Dir.glob("{#{spec.executables.join(',')}}") } ] }.to_h
-+         end }
++   def exttree
++      @exttree ||= super { { '.' => spec.extensions.select { |file| /extconf\.rb$/ =~ file } } }
     end
  
 -   def includefiles
@@ -2549,8 +2805,12 @@ index 060264a..59df18c 100644
 -               Dir.glob("**/*.h{,pp}").select { |file| File.file?(file) }
 -            end
 -         end || []) || []
--   end
--
++   def exetree
++      @exetree ||= super { Dir.chdir(root) do
++            exedirs.map { |dir| [ dir, Dir.chdir(File.join(root, dir)) { Dir.glob("{#{spec.executables.join(',')}}") } ] }.to_h
++         end }
+    end
+ 
 -   def doc_sourcefiles
 -      doc_sourcedirs + spec.extra_rdoc_files
 +   def docsrctree
@@ -2558,7 +2818,7 @@ index 060264a..59df18c 100644
     end
  
     # custom
-@@ -221,10 +115,6 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -221,10 +136,6 @@ class Setup::Source::Gem < Setup::Source::Base
        extroots.find { |extroot| extroot == file[0...extroot.size] }
     end
  
@@ -2569,7 +2829,7 @@ index 060264a..59df18c 100644
     # Queries
  
     # +valid?+ returns state of validity of the gem: true or false
-@@ -239,44 +129,41 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -239,44 +150,43 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
     def to_h
@@ -2634,13 +2894,15 @@ index 060264a..59df18c 100644
 +      super
 +
 +      @spec = self.class.spec_for(options_in)
++
++      gemfile
     end
  end
 diff --git a/lib/setup/source/gemfile.rb b/lib/setup/source/gemfile.rb
-index d031874..d5e1bb3 100644
+index d031874..c028464 100644
 --- a/lib/setup/source/gemfile.rb
 +++ b/lib/setup/source/gemfile.rb
-@@ -1,13 +1,27 @@
+@@ -1,13 +1,30 @@
 +require 'setup/dsl'
  require 'setup/source/base'
  
@@ -2665,7 +2927,10 @@ index d031874..d5e1bb3 100644
 +   end
 +
 +   def dsl
-+      @dsl ||= Setup::DSL.new(source: self, replace_list: replace_list)
++      @dsl ||= Setup::DSL.new(source: self,
++                              replace_list: replace_list,
++                              skip_list: options[:gem_skip_list],
++                              append_list: options[:gem_append_list])
 +   end
 +
 +   def valid?
@@ -2692,7 +2957,7 @@ index 0bbff97..82bfc13 100644
        end
     end
 diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
-index 3327a5e..c5fb2db 100644
+index 3327a5e..648f77e 100644
 --- a/lib/setup/target/gem.rb
 +++ b/lib/setup/target/gem.rb
 @@ -1,38 +1,52 @@
@@ -2735,22 +3000,22 @@ index 3327a5e..c5fb2db 100644
     def datadir
 -      File.join(home, 'gems', gem.fullname)
 +      File.join(home, 'gems', source.fullname)
-    end
- 
--   def bindir
--      File.exist?(exedir) && exedir || File.join(home, 'gems', gem.fullname, 'bin')
++   end
++
 +   def exedir
 +      File.join(home, 'gems', source.fullname, source.exedirs.first || 'bin')
     end
  
--   def extdir
--      File.join(home, 'extensions', RbConfig::CONFIG["sitearch"], ::Gem.extension_api_version, gem.fullname)
+-   def bindir
+-      File.exist?(exedir) && exedir || File.join(home, 'gems', gem.fullname, 'bin')
 +   def dldir
 +      arch = [ ::Gem.platforms.last.cpu, ::Gem.platforms.last.os ].join('-')
 +
 +      File.join(home, 'extensions', arch, ::Gem.extension_api_version, source.fullname)
-+   end
-+
+    end
+ 
+-   def extdir
+-      File.join(home, 'extensions', RbConfig::CONFIG["sitearch"], ::Gem.extension_api_version, gem.fullname)
 +   def confdir
 +      File.join(home, 'gems', source.fullname, 'config')
     end
@@ -2761,7 +3026,7 @@ index 3327a5e..c5fb2db 100644
     end
  
     def specdir
-@@ -43,25 +57,53 @@ class Setup::Target::Gem
+@@ -43,25 +57,61 @@ class Setup::Target::Gem
        RbConfig::CONFIG['mandir']
     end
  
@@ -2803,17 +3068,25 @@ index 3327a5e..c5fb2db 100644
 -      File.join(home, 'gems', gem.fullname, 'exe')
 +   def chroot
 +      options[:chroot] || '/'
++   end
++
++   def is_lib_separated?
++      false
     end
  
 -   def initialize gem: raise, root: nil, home: ENV['GEM_HOME'] || ::Gem.paths.home
 -      @gem = gem
 -      @root = root
-+   def is_lib_separated?
++   def is_log_separated?
 +      false
 +   end
 +
-+   def is_log_separated?
-+      false
++   def require_libdir
++      (source.spec.require_paths | [ '.' ]).select do |x|
++         x !~ /^\//
++      end.map do |x|
++         File.expand_path(File.join(libdir, x))
++      end.first
 +   end
 +
 +   protected
