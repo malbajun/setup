@@ -1,0 +1,13 @@
+diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
+index 648f77e..66bfa91 100644
+--- a/lib/setup/target/gem.rb
++++ b/lib/setup/target/gem.rb
+@@ -42,7 +42,7 @@ class Setup::Target::Gem
+    end
+ 
+    def confdir
+-      File.join(home, 'gems', source.fullname, 'config')
++      File.join(home, 'gems', source.fullname)
+    end
+ 
+    def ridir
