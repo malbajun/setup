@@ -2,12 +2,12 @@
 
 Name:          gem-%pkgname
 Version:       5.999.4
-Release:       alt0.M80C.3
+Release:       alt4
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
 License:       BSD-2-Clause
 Url:           https://github.com/rubyworks/setup
-# Vcs:           https://github.com/majioa/setup.git
+Vcs:           https://github.com/majioa/setup.git
 Packager:      Ruby Maintainers Team <ruby@packages.altlinux.org>
 BuildArch:     noarch
 
@@ -89,8 +89,8 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
-* Tue Sep 15 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.4-alt0.M80C.3
-- build for C8.1
+* Tue Sep 15 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.4-alt4
+- + using gut ls-files when no git app
 
 * Mon Jul 13 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.4-alt3
 - ! gemfile dep export in one line when dep name is the same
