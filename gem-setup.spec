@@ -2,7 +2,7 @@
 
 Name:          gem-%pkgname
 Version:       5.999.4
-Release:       alt3.M81C.1
+Release:       alt4
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
 License:       BSD-2-Clause
@@ -89,8 +89,8 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
-* Tue Sep 15 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.4-alt3.M81C.1
-- build for C8.1
+* Tue Sep 15 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.4-alt4
+- + using gut ls-files when no git app
 
 * Mon Jul 13 2020 Pavel Skrylev <majioa@altlinux.org> 5.999.4-alt3
 - ! gemfile dep export in one line when dep name is the same
