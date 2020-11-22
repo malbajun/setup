@@ -1,3 +1,37 @@
+diff --git a/lib/setup/command.rb b/lib/setup/command.rb
+index b3ca092..fe07404 100644
+--- a/lib/setup/command.rb
++++ b/lib/setup/command.rb
+@@ -138,17 +138,21 @@ module Setup
+         begin
+           stdout = $stdout
+           $stdout = $stderr
+-          load('Rakefile')
+-        rescue Exception => e
+-          $stderr.puts("WARN [#{e.class}]: #{e.message}")
++
++          begin
++            load('Rakefile')
++          rescue Exception => e
++            $stderr.puts("WARN [#{e.class}]: #{e.message}")
++          end
++
++          Rake.application.load_imports
++          configuration.pre&.map do |task_name|
++            Rake::MultiTask[task_name].invoke
++          end
+         ensure
++          $stderr = $stdout
+           $stdout = stdout
+         end
+-
+-        Rake.application.load_imports
+-        configuration.pre&.map do |task_name|
+-          Rake::MultiTask[task_name].invoke
+-        end
+       end
+     end
+ 
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
 index 9dfbc23..b987e67 100644
 --- a/lib/setup/core_ext.rb
