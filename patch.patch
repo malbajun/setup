@@ -98,6 +98,20 @@ index b0389b9..530db8b 100755
        end.join("\n")
     end
  
+diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
+index eefa1e2..a24ba14 100644
+--- a/lib/setup/source/gem.rb
++++ b/lib/setup/source/gem.rb
+@@ -146,7 +146,8 @@ class Setup::Source::Gem < Setup::Source::Base
+    end
+ 
+    def to_h
+-      super.merge(spec: spec.to_yaml)
++      # TODO !ruby/array:Files strangely appeared during building the securecompare gem, what leads to exceptions on load
++      super.merge(spec: spec.to_yaml.gsub(/!ruby\/array:Files/, ""))
+    end
+ 
+    def required_ruby_version
 diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
 index 648f77e..66bfa91 100644
 --- a/lib/setup/target/gem.rb
