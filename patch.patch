@@ -1,3 +1,16 @@
+diff --git a/TODO b/TODO
+index 43b0879..f3c221a 100644
+--- a/TODO
++++ b/TODO
+@@ -1,7 +1,7 @@
+ - add disable source (for ruby-rubygems-update)
+ - add return to common space on load (for ruby-rails)
+ - add doc compilation only over included lib files
+-
++- validate provides/requires detection speed on gem-google-api-client , azure-sdk
+ 
+ 
+ - spec
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
 index b3ca092..fe07404 100644
 --- a/lib/setup/command.rb
@@ -32,6 +45,33 @@ index b3ca092..fe07404 100644
        end
      end
  
+diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
+index 26f891d..f1948ad 100644
+--- a/lib/setup/configuration.rb
++++ b/lib/setup/configuration.rb
+@@ -256,6 +256,7 @@ module Setup
+ 
+        if match
+           self.current_source_name = match[:name]
++          self.current_package_name = match[:name]
+           self.current_set = match[:suffix] && match[:suffix].sub('-', '') || match[:prefix] && 'lib' || 'bin'
+        else
+           $stderr.puts "No package match found for '#{value}'"
+@@ -280,6 +281,14 @@ module Setup
+        @current_source_name
+     end
+ 
++    def current_package_name= value
++       @current_package_name = !value.nil? && !value.empty? && value || nil
++    end
++
++    def current_package_name
++       @current_package_name
++    end
++
+     def root= value
+        @root = (root || {}).merge(current_source_name => value)
+     end
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
 index 9dfbc23..b987e67 100644
 --- a/lib/setup/core_ext.rb
@@ -69,6 +109,37 @@ index 9dfbc23..b987e67 100644
    end
  
     MODULES = {
+diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
+index c90af51..76abf01 100644
+--- a/lib/setup/deps.rb
++++ b/lib/setup/deps.rb
+@@ -32,7 +32,7 @@ class Setup::Deps
+    }
+ 
+    def targets
+-      if name = project.config.current_source_name
++      if name = project.config.current_package_name
+          project.targets.select { |target| target.source.has_name?(name) }
+       else
+          project.targets
+@@ -54,8 +54,8 @@ class Setup::Deps
+ 
+    def target_reqs target, sets_in = nil
+       sets = sets_in && [ sets_in ].flatten || REQS.keys
+-      # require 'pry'; binding.pry
+ 
++      #require 'pry'; binding.pry
+       REQS.select { |set, _| sets.include?(set) }.map do |set, data|
+          reqs = data.map do |cond_in, req_in|
+             cond = cond_in.is_a?(Proc) ? cond_in[target] : cond_in
+@@ -140,7 +140,6 @@ class Setup::Deps
+ 
+       method = method("target_#{type}")
+ 
+-      # require 'pry'; binding.pry
+       deps = targets.map do |target|
+          $stderr.puts "  - [#{target.source.name}]"
+ 
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
 index b0389b9..530db8b 100755
 --- a/lib/setup/dsl.rb
@@ -97,6 +168,47 @@ index b0389b9..530db8b 100755
 +         [ "gem '#{name}'", reqs, autoreq, group_list ].compact.join(', ')
        end.join("\n")
     end
+ 
+diff --git a/lib/setup/session.rb b/lib/setup/session.rb
+index 4ac8f99..b9837a3 100644
+--- a/lib/setup/session.rb
++++ b/lib/setup/session.rb
+@@ -204,24 +204,28 @@ module Setup
+     def provides
+       io.puts("Provides:") unless quiet?
+ 
+-      depper.provs.each do |target, provs|
++      provs = depper.provs.map do |target, provs|
+          io.puts("<#{target}>:") unless quiet?
+ 
+-         provs.map { |_, prov_list| prov_list }.flatten.uniq.each do |prov|
+-            puts(prov)
+-         end
++         provs.map { |_, prov_list| prov_list }
++      end.flatten.reverse.uniq.reverse
++
++      provs.each do |prov|
++         io.puts(prov)
+       end
+     end
+ 
+     def requires
+       io.puts("Requires:") unless quiet?
+ 
+-      depper.reqs.each do |target, reqs|
++      reqs = depper.reqs.map do |target, reqs|
+          io.puts("<#{target}>:") unless quiet?
+ 
+-         reqs.map { |_, req_list| req_list }.flatten.uniq.each do |req|
+-            io.puts(req)
+-         end
++         reqs.map { |_, req_list| req_list }
++      end.flatten.reverse.uniq.reverse
++
++      reqs.each do |req|
++         io.puts(req)
+       end
+     end
  
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
 index eefa1e2..a24ba14 100644
