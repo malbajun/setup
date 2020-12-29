@@ -12,39 +12,145 @@ index 43b0879..f3c221a 100644
  
  - spec
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
-index b3ca092..fe07404 100644
+index b3ca092..9a35242 100644
 --- a/lib/setup/command.rb
 +++ b/lib/setup/command.rb
-@@ -138,17 +138,21 @@ module Setup
-         begin
-           stdout = $stdout
-           $stdout = $stderr
+@@ -39,9 +39,9 @@ module Setup
+ 
+     task 'show'     , "show current configuration"
+     task 'all'      , "config, compile and install"
+-    task 'build'    , "run config, compile, and document consequently"
++    task 'build'    , "run make, and document consequently"
+     task 'config'   , "save/customize configuration settings"
+-    task 'compile'  , "compile ruby extentions"
++    task 'make'     , "run custom build task and then compile ruby extentions"
+     task 'document' , "generate ri/rdoc documentation"
+     task 'test'     , "run test suite"
+     task 'install'  , "install project files"
+@@ -76,13 +76,8 @@ module Setup
+ 
+       optparse_header(parser, options)
+       case task
+-      when 'config'
+-        optparse_config(parser, options)
+-      when 'compile'
+-        optparse_compile(parser, options)
+       when 'build'
+         optparse_config(parser, options)
+-        optparse_compile(parser, options)
+         optparse_document(parser, options)
+       when 'document'
+         optparse_document(parser, options)
+@@ -115,8 +110,6 @@ module Setup
+         $stderr.puts "(#{RUBY_VERSION} #{RUBY_PLATFORM})"
+       end
+ 
+-      pre(task)
+-
+       if configuration.compat
+         Setup::Base.bash(configuration.compat, task, "--prefix=#{configuration.install_prefix}")
+       end
+@@ -133,25 +126,6 @@ module Setup
+       puts unless session.quiet?
+     end
+ 
+-    def pre task
+-      if defined? Rake
+-        begin
+-          stdout = $stdout
+-          $stdout = $stderr
 -          load('Rakefile')
 -        rescue Exception => e
 -          $stderr.puts("WARN [#{e.class}]: #{e.message}")
-+
-+          begin
-+            load('Rakefile')
-+          rescue Exception => e
-+            $stderr.puts("WARN [#{e.class}]: #{e.message}")
-+          end
-+
-+          Rake.application.load_imports
-+          configuration.pre&.map do |task_name|
-+            Rake::MultiTask[task_name].invoke
-+          end
-         ensure
-+          $stderr = $stdout
-           $stdout = stdout
-         end
+-        ensure
+-          $stdout = stdout
+-        end
 -
 -        Rake.application.load_imports
 -        configuration.pre&.map do |task_name|
 -          Rake::MultiTask[task_name].invoke
 -        end
+-      end
+-    end
+-
+     # Setup session.
+ 
+     def session
+@@ -184,7 +158,6 @@ module Setup
+ 
+     def optparse_all(parser, options)
+       optparse_config(parser, options)
+-      optparse_compile(parser, options)
+       optparse_document(parser, options)
+       optparse_install(parser, options)
+       optparse_test(parser, options)
+@@ -230,10 +203,6 @@ module Setup
        end
      end
  
+-    #
+-    def optparse_compile(parser, options)
+-    end
+-
+     # Setup options for +install+ task.
+ 
+     def optparse_install(parser, options)
+diff --git a/lib/setup/compiler.rb b/lib/setup/compiler.rb
+index b2c8fdd..7cda78e 100644
+--- a/lib/setup/compiler.rb
++++ b/lib/setup/compiler.rb
+@@ -20,7 +20,7 @@ module Setup
+     end
+ 
+     #
+-    def compile
++    def make
+       chrpath_path = `which chrpath`.strip
+ 
+       project.sources.each do |source|
+@@ -30,12 +30,12 @@ module Setup
+ 
+             Dir.chdir(dir) do
+               puts "[#{dir}]$ make #{config.makeprog}"
+-              make
++              make_task
+ 
+-              # post compile
++              # post make
+               if Dir.glob("**/*.so").any?
+                 FileUtils.mkdir_p File.join(source.root, ".so.#{source.name}", RbConfig::CONFIG['sitearchdir'], target_prefix)
+-                make('install', DESTDIR: File.join(source.root, ".so.#{source.name}"))
++                make_task('install', DESTDIR: File.join(source.root, ".so.#{source.name}"))
+                 Dir.glob(File.join(source.root, ".so.#{source.name}/**/*.so")).each do |file|
+                   FileUtils.touch(File.join(File.dirname(file), 'gem.build_complete'))
+ 
+@@ -55,7 +55,7 @@ module Setup
+         source.exttree.each do |dir_in, extfiles|
+           extfiles.each do |extfile|
+             Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
+-              make('clean')
++              make_task('clean')
+             end
+           end
+         end
+@@ -69,7 +69,7 @@ module Setup
+           extfiles.each do |extfile|
+             Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
+               Dir.glob('**/gem.build_complete').each { |file| FileUtils.rm_f(file) }
+-              make('distclean')
++              make_task('distclean')
+             end
+ 
+             FileUtils.rm_rf(File.join(source.root, ".so.#{source.name}"))
+@@ -81,7 +81,7 @@ module Setup
+     protected
+     #
+     #
+-    def make task = nil, env = {}
++    def make_task task = nil, env = {}
+        if File.exist?('Makefile')
+           args = [env, config.makeprog, task].compact
+           bash(*args)
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
 index 26f891d..f1948ad 100644
 --- a/lib/setup/configuration.rb
@@ -73,15 +179,25 @@ index 26f891d..f1948ad 100644
         @root = (root || {}).merge(current_source_name => value)
      end
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
-index 9dfbc23..b987e67 100644
+index 9dfbc23..4f7ff3d 100644
 --- a/lib/setup/core_ext.rb
 +++ b/lib/setup/core_ext.rb
-@@ -36,18 +36,28 @@ module Kernel
+@@ -36,18 +36,38 @@ module Kernel
     alias :__setup_orig_require :require
  
    def ` cmd
 +    def lsfiles tokens
-+      mask = tokens[2..-1].select { |t| t !~ /^-/ }.first&.sub('*', '**/*') || '**/*'
++      folder = tokens[2..-1].select { |t| t !~ /^-/ }.first
++      mask =
++      if folder
++        if folder =~ /\*/
++          folder.sub('*', '**/*')
++        else
++          folder + '/**/*'
++        end
++      else
++        '**/*'
++      end
 +      list = Dir.glob(mask, File::FNM_DOTMATCH).select { |x| File.file?(x) }
 +      char = tokens.include?('-z') && "\0" || "\n"
 +      list.join(char)
@@ -169,11 +285,104 @@ index b0389b9..530db8b 100755
        end.join("\n")
     end
  
+diff --git a/lib/setup/installer.rb b/lib/setup/installer.rb
+index a12cb4f..03dffe3 100644
+--- a/lib/setup/installer.rb
++++ b/lib/setup/installer.rb
+@@ -283,7 +283,7 @@ module Setup
+       ents = files.select { |file| File.extname(file) =~ dllext }
+ 
+       if ents.empty? && !files.empty?
+-        raise Error, "ruby extention not compiled: 'setup.rb compile' first"
++        raise Error, "ruby extention not compiled: 'setup.rb make' first"
+       end
+ 
+       ents
 diff --git a/lib/setup/session.rb b/lib/setup/session.rb
-index 4ac8f99..b9837a3 100644
+index 4ac8f99..cb037a0 100644
 --- a/lib/setup/session.rb
 +++ b/lib/setup/session.rb
-@@ -204,24 +204,28 @@ module Setup
+@@ -89,13 +89,13 @@ module Setup
+     # Run all tasks in sequence.
+     #
+     # * config
+-    # * compile
++    # * make
+     # * test      (optional)
+     # * install
+     #
+     def all
+       config
+-      compile
++      make
+ 
+       if configuration.test?
+         ok = test
+@@ -110,12 +110,12 @@ module Setup
+     # Run all build tasks in sequence.
+     #
+     # * config
+-    # * compile
++    # * make
+     # * document
+     #
+     def build
+       config
+-      compile
++      make
+       document
+     end
+ 
+@@ -134,20 +134,44 @@ module Setup
+       puts configuration if trace? && !quiet?
+     end
+ 
+-    #
+-    def compile
++    # Make the project by running custom build task, and then compile binary if any.
++    def make
++      pre
++
+       if compilable?
+         log_header('Compile')
+         compiler.configure
+         #abort "must run 'setup config' first" unless configuration.exist?
+-        compiler.compile
++        compiler.make
+       end
+     end
+ 
+     # What #make used to be called.
+-    alias_method :make, :compile
+     alias_method :setup, :make
+ 
++    def pre
++      if defined? Rake
++        begin
++          stdout = $stdout
++          $stdout = $stderr
++
++          begin
++            load('Rakefile')
++          rescue Exception => e
++            $stderr.puts("WARN [#{e.class}]: #{e.message}")
++          end
++
++          Rake.application.load_imports
++          configuration.pre&.map do |task_name|
++            Rake::MultiTask[task_name].invoke
++          end
++        ensure
++          $stderr = $stdout
++          $stdout = stdout
++        end
++      end
++    end
++
+     #
+     def install
+       #abort "must run 'setup config' first" unless configuration.exist?
+@@ -204,24 +228,28 @@ module Setup
      def provides
        io.puts("Provides:") unless quiet?
  
