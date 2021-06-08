@@ -11,8 +11,21 @@ index 43b0879..f3c221a 100644
  
  
  - spec
+diff --git a/lib/setup.rb b/lib/setup.rb
+index 5f65c9c..d52fd77 100644
+--- a/lib/setup.rb
++++ b/lib/setup.rb
+@@ -1,3 +1,8 @@
++begin
++  require 'pry'
++rescue Exception
++end
++
+ require 'setup/version'
+ require 'setup/session'
+ require 'setup/source'
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
-index b3ca092..9a35242 100644
+index b3ca092..c6d03b4 100644
 --- a/lib/setup/command.rb
 +++ b/lib/setup/command.rb
 @@ -39,9 +39,9 @@ module Setup
@@ -95,6 +108,46 @@ index b3ca092..9a35242 100644
      # Setup options for +install+ task.
  
      def optparse_install(parser, options)
+@@ -329,7 +298,7 @@ module Setup
+ 
+       # pre action
+       parser.on('--pre LIST', 'Issue rake tasks from the comma-separated list before the action') do |val|
+-        configuration.pre = val.split(',')
++         configuration.pre = val.split(',').select {|x|x && x != ""}
+       end
+ 
+       # gem version replace
+@@ -347,6 +316,11 @@ module Setup
+         configuration.ignore_names = val
+       end
+ 
++      # regard name list
++      parser.on('--regard-names LIST', 'Regard sources by a name specified in the comma-separated list') do |val|
++        configuration.regard_names = val
++      end
++
+       # use source
+       parser.on('--use SOURCE', 'Apply the following options to the source named by this one') do |val|
+         configuration.current_source_name = val
+@@ -392,6 +366,18 @@ module Setup
+         configuration.current_dep_source = val
+       end
+ 
++      parser.on('--use-gem-dependencies DEPS', '') do |val|
++        configuration.use_gem_dependencies = val
++      end
++
++      parser.on('--use-gem-version DEPS', '') do |gem_version|
++         hash = gem_version.split(",").map do |gv|
++            v = gv.split(":")
++            !v.empty? && (v + ["0"])[0..1] || nil
++         end.compact.to_h
++         configuration.use_gem_version_list = configuration.use_gem_version_list.merge(hash)
++      end
++
+       parser.separator ""
+       parser.separator "Inform options:"
+ 
 diff --git a/lib/setup/compiler.rb b/lib/setup/compiler.rb
 index b2c8fdd..7cda78e 100644
 --- a/lib/setup/compiler.rb
@@ -152,10 +205,103 @@ index b2c8fdd..7cda78e 100644
            args = [env, config.makeprog, task].compact
            bash(*args)
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
-index 26f891d..f1948ad 100644
+index 26f891d..c12962d 100644
 --- a/lib/setup/configuration.rb
 +++ b/lib/setup/configuration.rb
-@@ -256,6 +256,7 @@ module Setup
+@@ -88,6 +88,8 @@ module Setup
+ 
+     option :'ignore-names'  , :pick, 'ignore sources with the specified comma-separated name list'
+ 
++    option :'regard-names'  , :pick, 'regard sources with the specified comma-separated name list'
++
+     option :shebang         , :pick, 'replace a shebang line for a newly installed executables ("",auto,env,ruby,<custom>)'
+ 
+     option :use             , :pick, 'apply the following to the module options'
+@@ -148,11 +150,23 @@ module Setup
+       end
+     end
+ 
++    def use_gem_version_list= value
++       @gem_version_replace = gem_version_replace.merge(value)
++    end
++
++    def use_gem_version_list
++       @gem_version_replace
++    end
++
+     def ignore_names= value
+       @ignore_names =
+       if value.is_a?(String)
+         tokens = (value || '').split(/[,;:]/)
+-        tokens.map(&:strip).select {|x| x.size > 0 }
++        tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
++           m = /^\/(?<name>.*)\/?$/.match(x)
++
++           m && m[:name] && Regexp.new(m[:name]) || x
++        end
+       else
+         value
+       end
+@@ -162,6 +176,24 @@ module Setup
+        @ignore_names || []
+     end
+ 
++    def regard_names= value
++      @regard_names =
++      if value.is_a?(String)
++        tokens = (value || '').split(/[,;:]/)
++        tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
++           m = /^\/(?<name>.*)\/?$/.match(x)
++
++           m && m[:name] && Regexp.new(m[:name]) || x
++        end
++      else
++        value
++      end
++    end
++
++    def regard_names
++       @regard_names || []
++    end
++
+     def shebang= value
+        @shebang = !value.nil? && !value.empty? && value || nil
+     end
+@@ -173,7 +205,7 @@ module Setup
+     end
+ 
+     def current_alias= value
+-       aliases[current_source_name] = current_alias | (value.is_a?(Array) && value || value.split(/[:;,]/))
++       aliases[current_source_name] = current_alias | (value.is_a?(Array) && value || value.split(/[:;]/)).map {|sub| sub.split(",") }
+     end
+ 
+     def current_alias
+@@ -232,6 +264,24 @@ module Setup
+        dep_sources[current_source_name] || dep_sources[nil] || []
+     end
+ 
++    def use_gem_dependencies= value
++      @use_gem_dependencies =
++      if value.is_a?(String)
++        tokens = (value || ENV['RPM_RUBY_USE_GEM_DEPENDENCY_LIST'] || '').split(/[,;:]/)
++        tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
++           match = x.match(/^([^\s]+)\s+(.*)/)
++
++           [ match[1], match[2] ]
++        end.to_h
++      else
++        value
++      end
++    end
++
++    def use_gem_dependencies
++       @use_gem_dependencies ||= {}
++    end
++
+     def suffixes
+        @suffixes ||= default_suffixes
+     end
+@@ -256,6 +306,7 @@ module Setup
  
         if match
            self.current_source_name = match[:name]
@@ -163,7 +309,7 @@ index 26f891d..f1948ad 100644
            self.current_set = match[:suffix] && match[:suffix].sub('-', '') || match[:prefix] && 'lib' || 'bin'
         else
            $stderr.puts "No package match found for '#{value}'"
-@@ -280,6 +281,14 @@ module Setup
+@@ -280,6 +331,14 @@ module Setup
         @current_source_name
      end
  
@@ -178,27 +324,59 @@ index 26f891d..f1948ad 100644
      def root= value
         @root = (root || {}).merge(current_source_name => value)
      end
+@@ -357,12 +416,20 @@ module Setup
+       end
+     end
+ 
++    def load
++       erb = ERB.new(File.read(CONFIG_FILE))
++       txt = erb.result(binding)
++       if Gem::Version.new(Psych::VERSION) >= Gem::Version.new("4.0.0")
++          YAML.load(txt, aliases: true, permitted_classes: [Gem::Specification, Symbol])
++       else
++          YAML.load(txt)
++       end
++    end
++
+     # Load configuration.
+     def initialize_configfile
+       if exist?
+-        erb = ERB.new(File.read(CONFIG_FILE))
+-        txt = erb.result(binding)
+-        dat = YAML.load(txt)
++        dat = load
+         dat.each do |k, v|
+           next if 'type' == k
+           next if 'mode' == k
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
-index 9dfbc23..4f7ff3d 100644
+index 9dfbc23..0597503 100644
 --- a/lib/setup/core_ext.rb
 +++ b/lib/setup/core_ext.rb
-@@ -36,18 +36,38 @@ module Kernel
+@@ -1,6 +1,8 @@
+-#
++#=th
+ # Ruby Extensions
+ #
++require 'bundler'
++
+ Encoding.default_external = Encoding::UTF_8
+ 
+ # Is this needed any more?
+@@ -34,20 +36,36 @@ end
+ module Kernel
+    alias :__old_system_call :`
     alias :__setup_orig_require :require
++   alias :__setup_orig_gem :gem
  
    def ` cmd
 +    def lsfiles tokens
-+      folder = tokens[2..-1].select { |t| t !~ /^-/ }.first
-+      mask =
-+      if folder
-+        if folder =~ /\*/
-+          folder.sub('*', '**/*')
-+        else
-+          folder + '/**/*'
-+        end
-+      else
-+        '**/*'
++      masks = tokens[2..-1].select do |t|
++        t !~ /^-/
++      end.map do |x|
++        x =~ /\*/ && x.sub('*', '**/*') || File.directory?(x) && "#{x}/**/*" || File.file?(x) && x || '**/*'
 +      end
-+      list = Dir.glob(mask, File::FNM_DOTMATCH).select { |x| File.file?(x) }
++      masks << "**/*" if masks.empty?
++      list = masks.map {|mask| Dir.glob(mask, File::FNM_DOTMATCH).select { |x| File.file?(x) } }.flatten
 +      char = tokens.include?('-z') && "\0" || "\n"
 +      list.join(char)
 +    end
@@ -225,8 +403,95 @@ index 9dfbc23..4f7ff3d 100644
    end
  
     MODULES = {
+@@ -55,8 +73,15 @@ module Kernel
+       'wrongdoc' => 'setup/extcore/wrongdoc',
+       'bones' => 'setup/extcore/bones',
+       'echoe' => 'setup/extcore/echoe',
++      'jeweler' => 'setup/extcore/jeweler',
+    }
+ 
++   def gem(gem_name, *requirements) # :doc
++      __setup_orig_gem(gem_name, *requirements)
++   rescue Gem::MissingSpecError => e
++      !MODULES[gem_name.to_s] && raise(e) || false
++   end
++
+    def require mod
+       __setup_orig_require(mod)
+    rescue LoadError => e
+@@ -68,6 +93,28 @@ module Kernel
+    end
+ end
+ 
++module Bundler
++   class Runtime
++      alias :__setup :setup
++
++      def setup(*groups)
++         /(bundler\/setup.rb|Gemfile|Rakefile):/ !~ caller[0] && super || self
++      end
++   end
++
++   class << self
++      def read_file(file)
++         SharedHelpers.filesystem_access(file, :read) do
++            begin
++               File.open(file, "r:UTF-8", &:read)
++            rescue Errno::ENOENT
++               ""
++            end
++         end
++      end
++   end
++end
++
+ class Array
+    # actjoin(array) => [<pre_match1>, <pre_match2>, <pre_match3>, <post_match>]; array = [match1, match2, match3]
+    #
+@@ -76,6 +123,24 @@ class Array
+    end
+ end
+ 
++class Pathname
++   def === value
++      if value.is_a?(String)
++         self.to_s === value
++      else
++         super
++      end
++   end
++
++   def == value
++      if value.is_a?(String)
++         self.to_s == value
++      else
++         super
++      end
++   end
++end
++
+ class String
+    # actsplit(string, re) => [<pre_match1>, <pre_match2>, <pre_match3>, <post_match>], [match1, match2, match3]
+    #
+@@ -134,3 +199,16 @@ class Symbol
+       to_s.make_singular.to_sym
+    end
+ end
++
++class Object
++   def self.const_get c
++      super
++   rescue Exception => e
++      begin
++        require c.to_s.downcase
++      rescue Exception => e
++      end
++
++      super
++   end
++end
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
-index c90af51..76abf01 100644
+index c90af51..997427c 100644
 --- a/lib/setup/deps.rb
 +++ b/lib/setup/deps.rb
 @@ -32,7 +32,7 @@ class Setup::Deps
@@ -248,6 +513,15 @@ index c90af51..76abf01 100644
        REQS.select { |set, _| sets.include?(set) }.map do |set, data|
           reqs = data.map do |cond_in, req_in|
              cond = cond_in.is_a?(Proc) ? cond_in[target] : cond_in
+@@ -72,7 +72,7 @@ class Setup::Deps
+ 
+       dsl.deps.each do |dep|
+          to_rpm(dep.requirement).map do |a, b|
+-            list << "ruby-gem(#{dep.name}) #{a} #{b}"
++            list << "gem(#{dep.name}) #{a} #{b}"
+          end
+       end
+ 
 @@ -140,7 +140,6 @@ class Setup::Deps
  
        method = method("target_#{type}")
@@ -257,10 +531,93 @@ index c90af51..76abf01 100644
           $stderr.puts "  - [#{target.source.name}]"
  
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index b0389b9..530db8b 100755
+index b0389b9..36f327c 100755
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
-@@ -61,9 +61,12 @@ class Setup::DSL
+@@ -1,3 +1,4 @@
++require 'bundler'
+ require 'fileutils'
+ require 'tempfile'
+ 
+@@ -12,28 +13,61 @@ class Setup::DSL
+    # attributes
+    attr_reader :source, :replace_list, :skip_list, :append_list
+ 
++   def gemfiles
++      return @gemfiles if @gemfiles
++
++      gemfiles = dsl.instance_variable_get(:@gemfiles) || []
++
++      @gemfiles = gemfiles.map {|g| g.is_a?(Pathname) && g || Pathname.new(g) }
++   end
++
+    def gemfile
+-      File.join(source.root, 'Gemfile')
++      gemfiles.first
++   end
++
++   def original_gemfile
++      @original_gemfile ||= Pathname.new(File.join(source.root, 'Gemfile'))
+    end
+ 
+    def dsl
+       @dsl ||= (
+          begin
+-            require 'bundler'
+-
+-            dsl = Dir.chdir(source.root) { Bundler::Dsl.new }
+-            dsl.eval_gemfile(gemfile)
+-            dsl
++            dsl =
++               Dir.chdir(source.root) do
++                  dsl = Bundler::Dsl.new
++                  dsl.eval_gemfile(original_gemfile)
++                  dsl
++               end
+          rescue LoadError,
+                 Bundler::GemNotFound,
+                 Bundler::GemfileNotFound,
+                 Bundler::VersionConflict,
+                 Bundler::Dsl::DSLError,
+                 ::Gem::InvalidSpecificationException => e
+-           nil
++
++            Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", Tempfile.create('Gemfile').path
++            dsl = Bundler::Dsl.new
++            dsl.instance_variable_set(:@gemfiles, [Pathname.new(ENV["BUNDLE_GEMFILE"])])
++            dsl.to_definition(Tempfile.create('Gemfile.lock').path, {})
++            Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", nil
++
++            dsl
++         end)
++   end
++
++   def edsl
++      @edsl ||= (
++         begin
++            edsl = dsl.dup
++            edsl.dependencies = deps_but(dsl.dependencies, replace_list, skip_list, append_list)
++            edsl
+          end)
+    end
+ 
++   def definition
++      @definition ||= edsl.to_definition(Tempfile.create.path, {})
++   end
++
+    def deps
+       deps_but(source.deps(:runtime), replace_list, skip_list, append_list)
+    end
+@@ -51,7 +85,7 @@ class Setup::DSL
+    end
+ 
+    def valid?
+-      !dsl.nil?
++      gemfiles.any? {|g| g.eql?(original_gemfile) }
+    end
+ 
+    def to_ruby
+@@ -61,9 +95,12 @@ class Setup::DSL
     end
  
     def to_gemfile
@@ -275,7 +632,7 @@ index b0389b9..530db8b 100755
           autoreq = dep.respond_to?(:autorequire) &&
                     dep.autorequire &&
                     "require: #{dep.autorequire.any? &&
-@@ -72,7 +75,8 @@ class Setup::DSL
+@@ -72,7 +109,8 @@ class Setup::DSL
           groups = dep.respond_to?(:groups) && dep.groups || []
           g = groups - [ :default ]
           group_list = g.any? && "group: %i(#{groups.join("\n")})" || nil
@@ -285,8 +642,393 @@ index b0389b9..530db8b 100755
        end.join("\n")
     end
  
+@@ -86,7 +124,7 @@ class Setup::DSL
+             s || name == dep.name && req
+          end
+ 
+-         new_req && Gem::Dependency.new(dep.name, Gem::Requirement.new([new_req]), dep.type) || dep
++         new_req && Bundler::Dependency.new(dep.name, Gem::Requirement.new([new_req]), options: { "type" => dep.type }) || dep
+       end.compact | append_list
+    end
+ 
+diff --git a/lib/setup/extcore/jeweler.rb b/lib/setup/extcore/jeweler.rb
+new file mode 100644
+index 0000000..347db68
+--- /dev/null
++++ b/lib/setup/extcore/jeweler.rb
+@@ -0,0 +1,61 @@
++class Jeweler
++   class Tasks
++      class Files
++         attr_reader :data
++
++         def exclude *lists
++            @data.exclude = lists
++         end
++
++         def initialize
++            @data = OpenStruct.new
++         end
++      end
++
++      attr_reader :data
++
++      def files
++         @files ||= Files.new
++      end
++
++      def excludes
++         @files.data.exclude.map {|e| Dir[e] }.flatten
++      end
++
++      def version
++         IO.read("VERSION")
++      end
++
++      def spec
++         Gem::Specification.new do |g|
++            %w(name version license summary description email authors homepage files test_files extra_rdoc_files rdoc_options).each do |name|
++               g.send("#{name}=", data[name]) if data[name]
++            end
++            g.files ||= Dir["**/*"] - excludes
++            g.version ||= version
++         end
++      end
++
++      protected
++
++      def initialize
++         @data = OpenStruct.new
++
++         yield(self)
++      end
++
++      def method_missing name_in, *args
++         if /(?<name>\w+)=/ =~ name_in
++            @data[name] = args.first
++         else
++            raise
++         end
++      end
++   end
++
++   class RubygemsDotOrgTasks
++   end
++
++   class GemcutterTasks
++   end
++end
+diff --git a/lib/setup/gemspec.rb b/lib/setup/gemspec.rb
+index 20d096f..db8f185 100644
+--- a/lib/setup/gemspec.rb
++++ b/lib/setup/gemspec.rb
+@@ -4,10 +4,13 @@ module Setup::Gemspec
+       Bones: "setup/gemspec/bones",
+       Echoe: "setup/gemspec/echoe",
+       Rookbook: "setup/gemspec/rookbook",
++      Pom: "setup/gemspec/pom",
+       Hoe: "setup/gemspec/hoe",
+       Olddoc: "setup/gemspec/olddoc",
+       Cmake: "setup/gemspec/cmake",
++      Mast: "setup/gemspec/mast",
+       Gem: "setup/gemspec/gem",
++      Jeweler: "setup/gemspec/jeweler",
+       PackageTask: "setup/gemspec/package_task",
+    }
+ 
+diff --git a/lib/setup/gemspec/gem.rb b/lib/setup/gemspec/gem.rb
+index 31cb677..b7ec746 100644
+--- a/lib/setup/gemspec/gem.rb
++++ b/lib/setup/gemspec/gem.rb
+@@ -5,11 +5,33 @@ module Setup::Gemspec::Gem
+       def parse file
+          spec = nil
+ 
+-         FileUtils.chdir(File.dirname(file)) { spec = Gem::Specification.load(File.basename(file)) }
++         dir = File.dirname(file)
++         $:.unshift(File.join(dir, "lib"))
++         $:.unshift(dir)
++         FileUtils.chdir(dir) { spec = Gem::Specification.load(File.basename(file)) }
++         if !spec
++            module_name = "M" + Random.srand.to_s
++            propfile = File.basename(file)
++            mod_code = <<-END
++               module #{module_name}
++                  extend(Rake::DSL)
++                  # NOTE this forces not to share namespace but avoid exception when calling
++                  # main space methods, see Rakefile of racc gem
++                  # also named module is required instead of anonymous one to allow root level defined methods access
++                  load('#{propfile}')
++               end
++            END
++            spec_ids = ObjectSpace.each_object(Gem::Specification).to_a.map {|s|s.__id__}
++            FileUtils.chdir(dir) { module_eval(mod_code) }
++            spec = ObjectSpace.each_object(Gem::Specification).to_a.select {|s| !spec_ids.include?(s.__id__) }.first
++         end
+ 
+          spec
+       rescue Exception => e
+          $stderr.puts "WARN [#{e.class}]: #{e.message}"
++      ensure
++         $:.shift
++         $:.shift
+       end
+    end
+ end
+diff --git a/lib/setup/gemspec/hoe.rb b/lib/setup/gemspec/hoe.rb
+index 9282aa7..9e081db 100644
+--- a/lib/setup/gemspec/hoe.rb
++++ b/lib/setup/gemspec/hoe.rb
+@@ -42,7 +42,6 @@ module Setup::Gemspec::Hoe
+             else
+                specs.first
+             ensure
+-               $stdout.unlink
+                $stderr = stderr
+                $stdout = stdout
+             end
+diff --git a/lib/setup/gemspec/jeweler.rb b/lib/setup/gemspec/jeweler.rb
+new file mode 100644
+index 0000000..eab3592
+--- /dev/null
++++ b/lib/setup/gemspec/jeweler.rb
+@@ -0,0 +1,37 @@
++# POM xml based gemspec detection module
++# example: "polyglot" gem
++#
++module Setup::Gemspec::Jeweler
++   RE = /\/Rakefile$/
++
++   class << self
++      def parse propfile
++         begin
++            stdout = $stdout
++            stderr = $stderr
++            $stdout = $stderr = Tempfile.new('package-task')
++
++            module_name = "M" + Random.srand.to_s
++            mod_code = <<-END
++               module #{module_name}
++                  extend(Rake::DSL)
++                  # NOTE this forces not to share namespace but avoid exception when calling
++                  # main space methods, see Rakefile of racc gem
++                  # also named module is required instead of anonymous one to allow root level defined methods access
++                  load('#{propfile}')
++               end
++
++               ObjectSpace.each_object(Jeweler::Tasks).map { |h| h.spec }.compact
++            END
++            specs = module_eval(mod_code)
++         rescue Exception => e
++            warn(e.message)
++         else
++            specs.first
++         ensure
++            $stderr = stderr
++            $stdout = stdout
++         end
++      end
++   end
++end
+diff --git a/lib/setup/gemspec/mast.rb b/lib/setup/gemspec/mast.rb
+new file mode 100644
+index 0000000..6ea3973
+--- /dev/null
++++ b/lib/setup/gemspec/mast.rb
+@@ -0,0 +1,84 @@
++module Setup::Gemspec::Mast
++   RE = /MANIFEST/
++
++   PROPS = {
++      name: :name,
++      version: :version,
++      date: :date,
++      authors: :authors,
++      email: ->(this) do
++         /(?<email>[^\s<]+@[^\s>]+)/ =~ this["contact"]
++         email
++      end,
++      summary: :summary,
++      description: :description,
++      homepage: :"resources.home", #->(this) { this["resources"]["home"] }
++      "metadata.homepage_uri": :"resources.code",
++      "metadata.allowed_push_host": "https://rubygems.org",
++      "metadata.source_code_uri": :"resources.repo",
++      files: ->(this) { this["manifest"].grep(/^[^#]/) },
++      bindir: "bin",
++      executables: ->(this) { this["manifest"].grep(/^bin\//).map {|b| b.split("/").last } },
++      require_paths: ["lib"],
++      extra_rdoc_files: ->(this) { this["manifest"].grep(/\.(rdoc|md)$/) },
++      licenses: ->(this) do
++         if license = this["manifest"].grep(/LICENSE/).first
++            lic = IO.read(license).split("\n")
++            if type = lic.reduce(nil) { |r, l| r || /(?<type>Apache|MIT)/ =~ l && type }
++               version = lic.reduce(nil) { |r, l| r || /Version (?<version>[\d\.]+)/ =~ l && version }
++               [[ type, version ].compact.join("-") ]
++            end
++         end
++      end,
++      test_files: ->(this) { this["manifest"].grep(/^(test|spec|feature)\//) },
++      required_ruby_version: nil,
++      _add_development_dependency: ->(this) do
++         this["requires"].map { |line| /^(?<req>[^\s(]+)/.match(line)["req"] }
++      end
++   }
++
++   class << self
++      def parse file
++         spec = nil
++         dir = File.dirname(file)
++         file1 = File.join(dir, "meta", "package")
++         file2 = File.join(dir, "meta", "profile")
++
++         if File.file?(file1) && File.file?(file2)
++            Gem::Specification.new do |s|
++               data = YAML.load(IO.read(file1)).merge(YAML.load(IO.read(file2))).merge("manifest" => IO.read("MANIFEST").split("\n"))
++               PROPS.each do |name, value_in|
++                  value =
++                     case value_in
++                     when Symbol
++                        value_in.to_s.split(".").reduce(data) {|r, n| r[n] }
++                     when Proc
++                        value_in[data]
++                     when NilClass
++                     else
++                        value_in
++                     end
++
++                  if value
++                     method_name = /^(?:_(?<mname>[^\.]+)|(?<subname>[^\.]+\..+)|.*)/ =~ name.to_s
++                     if mname
++                        if value.is_a?(Array)
++                           value.each { |v| s.send(mname, v) }
++                        else
++                           s.send(mname, value)
++                        end
++                     elsif subname
++                        path = subname.split(".")
++                        path[0..-2].reduce(s) {|r, n| r.send(n) }.send(:[]=, path[-1], value)
++                     else
++                        s.send("#{name}=", value)
++                     end
++                  end
++               end
++            end
++         end
++      rescue Exception => e
++         $stderr.puts "WARN [#{e.class}]: #{e.message}"
++      end
++   end
++end
+diff --git a/lib/setup/gemspec/package_task.rb b/lib/setup/gemspec/package_task.rb
+index a48b121..208e1c7 100644
+--- a/lib/setup/gemspec/package_task.rb
++++ b/lib/setup/gemspec/package_task.rb
+@@ -41,7 +41,6 @@ module Setup::Gemspec::PackageTask
+             else
+                specs.first
+             ensure
+-               $stdout.unlink
+                $stderr = stderr
+                $stdout = stdout
+             end
+diff --git a/lib/setup/gemspec/pom.rb b/lib/setup/gemspec/pom.rb
+new file mode 100644
+index 0000000..c117a52
+--- /dev/null
++++ b/lib/setup/gemspec/pom.rb
+@@ -0,0 +1,36 @@
++# POM xml based gemspec detection module
++# example: "ovirt-engine-sdk" gem
++#
++module Setup::Gemspec::Pom
++  RE = /\/pom.xml$/
++
++   class << self
++      def parse propfile
++         if File.file?(propfile)
++            dir = File.dirname(propfile)
++
++            specfile = Dir.glob(File.join(dir, '*.gemspec')).first
++
++            re = /require.*?(?<version_file>[^"']+version[^"']*)/
++            version_line = Dir.glob(File.join(dir, '**', '*.rb')).map { |x| IO.read(x).split("\n").grep(re).first }.compact.first
++            return nil if !version_line or !specfile
++            version_file = re.match(version_line)[:version_file]
++            re_V = /(?<klass>[^\"\'\(\s]+)::VERSION/
++            klass = re_V.match(IO.read(specfile).split("\n").grep(re_V).first.to_s)[:klass]
++            version = `xmllint pom.xml --xpath "/*[name()='project']/*[name()='version']/text()"`.strip
++            if version != ""
++               modtext = "module #{klass};VERSION = '#{version}';end"
++               File.open(File.join(dir, "lib", version_file), "w+") {|f| f.puts(modtext) }
++            end
++
++            begin
++               FileUtils.chdir(dir) do
++                  Gem::Specification.load(File.basename(specfile))
++               end
++            rescue Exception
++            end
++         end
++      rescue Errno::ENOENT
++      end
++   end
++end
+diff --git a/lib/setup/gemspec/specific.rb b/lib/setup/gemspec/specific.rb
+index 2b858ac..8225461 100644
+--- a/lib/setup/gemspec/specific.rb
++++ b/lib/setup/gemspec/specific.rb
+@@ -1,22 +1,42 @@
+ module Setup::Gemspec::Specific
+-   RE = /\/psych.gemspec$/
++   RE = /\/(?<name>psych|rdoc|signet|coderay).gemspec$/
++
++   RULE = {
++      RDoc: "rdoc",
++      Signet: "signet",
++      Psych: "psych",
++      CodeRay: "coderay",
++      Daemons: "daemons"
++   }
+ 
+    class << self
+       def parse file
+          spec = nil
+ 
+-         fix_preloaded_for(file)
++         ENV["RELEASE"] = "1"
++         dir = File.dirname(file)
++         libdir = File.join(dir, 'lib')
++         $:.unshift(libdir) if !$:.include?(libdir)
++
++         match = file.match(RE)
++         rule = RULE.find { |(cls, _)| cls.to_s.downcase == match[:name] }
+ 
+-         FileUtils.chdir(File.dirname(file)) { spec = Gem::Specification.load(File.basename(file)) }
++         fix_preloaded_for(rule[0], rule[1], dir)
++
++         FileUtils.chdir(dir) { spec = Gem::Specification.load(File.basename(file)) }
+ 
+          spec
+       rescue Exception => e
+          $stderr.puts "WARN [#{e.class}]: #{e.message}"
+       end
+ 
+-      def fix_preloaded_for file
+-         if Psych.constants.include?(:VERSION)
+-            Psych.send(:remove_const, :VERSION)
++      def fix_preloaded_for const_name, name, dir
++         if Object.constants.include?(const_name)
++            Object.send(:remove_const, const_name)
++            to_remove = $LOADED_FEATURES.select {|x| /#{name}/ =~ x }
++            $LOADED_FEATURES.replace($LOADED_FEATURES - to_remove)
++
++            require(name)
+          end
+       end
+    end
 diff --git a/lib/setup/installer.rb b/lib/setup/installer.rb
-index a12cb4f..03dffe3 100644
+index a12cb4f..ac124f1 100644
 --- a/lib/setup/installer.rb
 +++ b/lib/setup/installer.rb
 @@ -283,7 +283,7 @@ module Setup
@@ -298,8 +1040,163 @@ index a12cb4f..03dffe3 100644
        end
  
        ents
+@@ -322,8 +322,10 @@ module Setup
+         FileUtils.mkdir_p(File.dirname(dest_file))
+         if options[:symlink]
+           io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
+-          FileUtils.rm_rf(dest_file)
+-          FileUtils.ln_s(file, dest_file, force: true)
++          # FileUtils.rm_rf(dest_file)
++          if !File.exist?(dest_file)
++            FileUtils.ln_s(file, dest_file, force: true)
++          end
+         elsif options[:shebang]
+           io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
+           install_reshebanged(file, dest_file, shebang: options[:shebang], mode: options[:mode])
+diff --git a/lib/setup/project.rb b/lib/setup/project.rb
+index 25c3f15..4027748 100644
+--- a/lib/setup/project.rb
++++ b/lib/setup/project.rb
+@@ -1,3 +1,6 @@
++require 'bundler/shared_helpers'
++require 'bundler/runtime'
++
+ require 'setup'
+ 
+ module Setup
+@@ -31,7 +34,7 @@ module Setup
+ 
+     #
+     def initialize options = {}
+-      self.sources  = options.delete(:sources)
++      self.all_sources  = options.delete(:sources)
+       @rootdir  = options.delete(:rootdir)
+       @config   = options.delete(:config) || raise
+       @options  = options
+@@ -58,6 +61,7 @@ module Setup
+ 
+         # post create hook
+         autoalias
++        runtime
+     end
+ 
+     # The name of the package, used to install docs in system doc/ruby-{name}/ location.
+@@ -71,6 +75,10 @@ module Setup
+ 
+     alias load_path loadpath
+ 
++    def runtime
++       @runtime ||= root_source && Bundler.instance_variable_set(:@setup, Bundler::Runtime.new(rootdir, root_source.dsl.definition))
++    end
++
+     # Locate project root.
+     def rootdir
+       @rootdir ||= Dir.pwd
+@@ -78,7 +86,7 @@ module Setup
+ 
+     def to_h
+        {
+-          sources: sources.map {|x| x.to_h },
++          sources: all_sources.map {|x| x.to_h },
+           options: options,
+           rootdir: rootdir
+        }
+@@ -100,8 +108,8 @@ module Setup
+ 
+     # Sets a source list from config
+     #
+-    def sources= value
+-       @sources = value&.map do |source_in|
++    def all_sources= value
++       @all_sources = value&.map do |source_in|
+           case source_in.delete(:type)
+           when 'rakefile'
+              new_source(Setup::Source::Rakefile, source_in)
+@@ -139,7 +147,7 @@ module Setup
+     end
+ 
+     def is_enabled? source
+-      !config.ignore_names.include?(source.name)
++      !config.ignore_names.any? { |i| i === source.name }
+     end
+     #
+     #
+diff --git a/lib/setup/rake_app.rb b/lib/setup/rake_app.rb
+new file mode 100644
+index 0000000..55a149a
+--- /dev/null
++++ b/lib/setup/rake_app.rb
+@@ -0,0 +1,68 @@
++class Setup::Rake
++   attr_reader :app, :rakefile
++
++   def load
++      stdout = $stdout
++      $stdout = $stderr
++
++      self.class.load(rakefile)
++   rescue Exception => e
++      warn(e.message)
++   ensure
++      $stderr = $stdout
++      $stdout = stdout
++   end
++
++   def blank?
++      !@app
++   end
++
++   def present?
++      !!@app
++   end
++
++   def tasks
++      @tasks ||= @app&.tasks || []
++   end
++
++   def run_task task_name
++      @app&.invoke_task(task_name)
++   rescue Exception => e
++      warn "#{e.class}: #{e.message}\n\t#{e.backtrace.join("\n\t")}"
++      #require 'pry';binding.pry
++   end
++
++   def initialize rakedir
++      @rakefile =
++         ::Rake::Application::DEFAULT_RAKEFILES.map do |f|
++            File.join(rakedir, f)
++         end.find do |f|
++            File.file?(f)
++         end
++
++      if rakefile
++         @app = load
++      end
++   end
++
++   class << self
++      def load rakefile
++         module_name = "M" + Random.srand.to_s
++         mod_code = <<-END
++            module #{module_name}
++               extend(Rake::DSL)
++               # NOTE this forces not to share namespace but avoid exception when calling
++               # main space methods, see Rakefile of racc gem
++               Dir.chdir(File.dirname('#{rakefile}')) do
++                  load(File.basename('#{rakefile}'), true)
++               end
++
++               app = Rake.instance_variable_get(:@application)
++               Rake.instance_variable_set(:@application, nil)
++               app
++            end
++         END
++         module_eval(mod_code)
++      end
++   end
++end
 diff --git a/lib/setup/session.rb b/lib/setup/session.rb
-index 4ac8f99..cb037a0 100644
+index 4ac8f99..4845ab7 100644
 --- a/lib/setup/session.rb
 +++ b/lib/setup/session.rb
 @@ -89,13 +89,13 @@ module Setup
@@ -333,7 +1230,7 @@ index 4ac8f99..cb037a0 100644
        document
      end
  
-@@ -134,20 +134,44 @@ module Setup
+@@ -134,20 +134,41 @@ module Setup
        puts configuration if trace? && !quiet?
      end
  
@@ -362,15 +1259,12 @@ index 4ac8f99..cb037a0 100644
 +          stdout = $stdout
 +          $stdout = $stderr
 +
-+          begin
-+            load('Rakefile')
-+          rescue Exception => e
-+            $stderr.puts("WARN [#{e.class}]: #{e.message}")
-+          end
-+
-+          Rake.application.load_imports
 +          configuration.pre&.map do |task_name|
-+            Rake::MultiTask[task_name].invoke
++            project.all_sources.each do |src|
++              if src.respond_to?(:rake) and src.rake.present?
++                src.rake.run_task(task_name)
++              end
++            end
 +          end
 +        ensure
 +          $stderr = $stdout
@@ -382,7 +1276,7 @@ index 4ac8f99..cb037a0 100644
      #
      def install
        #abort "must run 'setup config' first" unless configuration.exist?
-@@ -204,24 +228,28 @@ module Setup
+@@ -204,24 +225,28 @@ module Setup
      def provides
        io.puts("Provides:") unless quiet?
  
@@ -419,11 +1313,158 @@ index 4ac8f99..cb037a0 100644
        end
      end
  
+@@ -235,7 +260,7 @@ module Setup
+       end.compact.to_h.merge(config: configuration,
+                              aliases: configuration.aliases,
+                              version_replaces: configuration.version_replaces,
+-                             gem_version_replace: configuration.gem_version_replace)
++                             gem_version_replace: (configuration.gem_version_replace || {}).merge(configuration.use_gem_dependencies || {}))
+     end
+ 
+     #
+diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
+index ec85602..e3cdfe2 100644
+--- a/lib/setup/source/base.rb
++++ b/lib/setup/source/base.rb
+@@ -215,11 +215,11 @@ class Setup::Source::Base
+ 
+    def lockfile
+       @lockfile ||= (
+-         root && File.join(root, 'Gemfile.lock') || Tempfile.new('Gemfile.lock').path)
++         root && File.join(root, 'Gemfile.lock') || Tempfile.create('Gemfile.lock').path)
+    end
+ 
+    def definition
+-      dsl&.dsl&.to_definition(lockfile, true)
++      dsl&.dsl&.to_definition(lockfile, {})
+    end
+ 
+    def deps groups_in = nil
+@@ -260,6 +260,10 @@ class Setup::Source::Base
+       end
+    end
+ 
++   def dsl
++      @dsl ||= Setup::DSL.new(source: self, replace_list: replace_list)
++   end
++
+    protected
+ 
+    def exedir
+@@ -308,7 +312,6 @@ class Setup::Source::Base
+       send("#{kind}tree", &block).map { |(_, values)| values }.flatten
+    end
+ 
+-   #
+    def initialize options_in = {}
+       @options = { root: Dir.pwd,
+                    replace_list: {} }.merge(options_in)
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
-index eefa1e2..a24ba14 100644
+index eefa1e2..6678fea 100644
 --- a/lib/setup/source/gem.rb
 +++ b/lib/setup/source/gem.rb
-@@ -146,7 +146,8 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -1,8 +1,9 @@
+-require 'setup/source/base'
+-
++require 'bundler/dependency'
+ require 'tempfile'
+ require 'yaml'
+ 
++require 'setup/source/base'
++
+ class Setup::Source::Gem < Setup::Source::Base
+    BIN_IGNORES = %w(test)
+    OPTION_KEYS = %i(root spec version replace_list aliases)
+@@ -22,15 +23,31 @@ class Setup::Source::Gem < Setup::Source::Base
+       spec: true,
+    }
+ 
+-   attr_reader :spec
+-
+    class << self
++      def load spec_in
++         if Gem::Version.new(Psych::VERSION) >= Gem::Version.new("4.0.0")
++            YAML.load(spec_in, aliases: true, permitted_classes: [Gem::Specification, Gem::Version, Gem::Dependency, Gem::Requirement, Symbol, OpenStruct])
++         else
++            YAML.load(spec_in)
++         end
++      end
++
+       def spec_for options_in = {}
+          spec_in = options_in[:spec]
+-         spec = spec_in.is_a?(String) && YAML.load(spec_in) || spec_in
+-         if options_in[:version_replaces] && version = options_in[:version_replaces][spec.name]
++         spec = spec_in.is_a?(String) && load(spec_in) || spec_in
++         version =
++            if options_in[:version_replaces] && options_in[:version_replaces][spec.name]
++               options_in[:version_replaces][spec.name]
++            elsif !options_in[:gem_version_replace].empty?
++               prever = options_in[:gem_version_replace].find {|(n,v)| n == spec.name }&.last
++               /([=><]+\s*)?(?<version>.*)/ =~ prever
++               version
++            end
++
++         if version
+             spec.version = Gem::Version.new(version)
+          end
++
+          spec.require_paths = options_in[:srclibdirs] if options_in[:srclibdirs]
+ 
+          spec
+@@ -51,11 +68,13 @@ class Setup::Source::Gem < Setup::Source::Base
+             new_if_valid(gemspec.parse(f), { root: File.dirname(f) }.merge(options_in))
+          end.flatten(1).compact
+ 
+-         specs.map { |x| x.name }.uniq.map { |name| specs.find { |spec| spec.name == name } }
++         specs.map { |x| x.name }.uniq.map do |name|
++            specs.sort_by { |s| s.version }.select { |spec| spec.name == name }.last
++         end
+       end
+ 
+       def new_if_valid spec, options_in = {}
+-         if spec && spec.platform == 'ruby'
++         if spec && spec.platform == 'ruby' && spec.version
+             self.new(source_options({ spec: spec }.merge(options_in)))
+          end
+       end
+@@ -70,7 +89,7 @@ class Setup::Source::Gem < Setup::Source::Base
+    end
+ 
+    def dep
+-      Gem::Dependency.new(name, Gem::Requirement.new(["~> #{version}"]), :runtime)
++      Bundler::Dependency.new(name, Gem::Requirement.new(["~> #{version}"]), options: { type: :runtime })
+    end
+ 
+    def fullname
+@@ -86,7 +105,7 @@ class Setup::Source::Gem < Setup::Source::Base
+    end
+ 
+    def gemspec_path
+-      gemspec_file = Tempfile.new('gem.')
++      gemspec_file = Tempfile.create('gem.')
+       gemspec_file.puts(dsl.to_ruby)
+       gemspec_file.rewind
+       gemspec_file.path
+@@ -94,17 +113,13 @@ class Setup::Source::Gem < Setup::Source::Base
+ 
+    def gemfile_path
+       if gemfile.dsl.valid?
+-         gemfile_file = Tempfile.new('Gemfile.')
++         gemfile_file = Tempfile.create('Gemfile.')
+          gemfile_file.puts(gemfile.dsl.to_gemfile)
+          gemfile_file.rewind
+          gemfile_file.path
+       end
+    end
+ 
+-   def dsl
+-      @dsl ||= Setup::DSL.new(source: self, replace_list: replace_list)
+-   end
+-
+    # tree
+ 
+    def datatree
+@@ -146,7 +161,8 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
     def to_h
@@ -433,6 +1474,92 @@ index eefa1e2..a24ba14 100644
     end
  
     def required_ruby_version
+@@ -167,6 +183,14 @@ class Setup::Source::Gem < Setup::Source::Base
+          paths.any? && paths || ['lib'])
+    end
+ 
++   def spec
++      @spec ||= self.class.spec_for(options)
++   end
++
++   def rake
++      @rake ||= Setup::Rake.new(File.join(options[:root]))
++   end
++
+    protected
+ 
+    def extroots
+@@ -177,12 +201,9 @@ class Setup::Source::Gem < Setup::Source::Base
+       @exedir ||= if_exist('exe')
+    end
+ 
+-   #
+    def initialize options_in = {}
+       super
+ 
+-      @spec = self.class.spec_for(options_in)
+-
+       gemfile
+    end
+ end
+diff --git a/lib/setup/source/gemfile.rb b/lib/setup/source/gemfile.rb
+index c028464..bf8f97f 100644
+--- a/lib/setup/source/gemfile.rb
++++ b/lib/setup/source/gemfile.rb
+@@ -2,16 +2,8 @@ require 'setup/dsl'
+ require 'setup/source/base'
+ 
+ class Setup::Source::Gemfile < Setup::Source::Base
+-   class << self
+-      def search dir, options_in = {}
+-         Dir.glob("#{dir}/**/Gemfile", File::FNM_DOTMATCH).map do |f|
+-            self.new(source_options({ root: File.dirname(f) }.merge(options_in)))
+-         end
+-      end
+-   end
+-
+    def gemfile_path
+-      gemspec_file = Tempfile.new('Gemfile.')
++      gemspec_file = Tempfile.create('Gemfile.')
+       gemspec_file.puts(dsl.to_gemfile)
+       gemspec_file.rewind
+       gemspec_file.path
+@@ -27,4 +19,16 @@ class Setup::Source::Gemfile < Setup::Source::Base
+    def valid?
+       dsl.valid?
+    end
++
++   def rake
++      @rake ||= Setup::Rake.new(File.join(options[:root]))
++   end
++
++   class << self
++      def search dir, options_in = {}
++         Dir.glob("#{dir}/**/Gemfile", File::FNM_DOTMATCH).map do |f|
++            self.new(source_options({ root: File.dirname(f) }.merge(options_in)))
++         end
++      end
++   end
+ end
+diff --git a/lib/setup/source/rakefile.rb b/lib/setup/source/rakefile.rb
+index 82bfc13..dbbe038 100644
+--- a/lib/setup/source/rakefile.rb
++++ b/lib/setup/source/rakefile.rb
+@@ -1,4 +1,5 @@
+ require 'setup/source/base'
++require 'setup/rake_app'
+ 
+ class Setup::Source::Rakefile < Setup::Source::Base
+    class << self
+@@ -8,4 +9,8 @@ class Setup::Source::Rakefile < Setup::Source::Base
+          end
+       end
+    end
++
++   def rake
++      @rake ||= Setup::Rake.new(File.join(options[:root]))
++   end
+ end
 diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
 index 648f77e..66bfa91 100644
 --- a/lib/setup/target/gem.rb
@@ -446,3 +1573,18 @@ index 648f77e..66bfa91 100644
     end
  
     def ridir
+diff --git a/lib/setup/target/site.rb b/lib/setup/target/site.rb
+index 5ce81ac..92246d9 100644
+--- a/lib/setup/target/site.rb
++++ b/lib/setup/target/site.rb
+@@ -89,6 +89,10 @@ class Setup::Target::Site
+       libdir && libdir != logdir
+    end
+ 
++   def require_libdir
++      File.join(libdir, source.name)
++   end
++
+    protected
+ 
+    def initialize source: raise, options: {}
