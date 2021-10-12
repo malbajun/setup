@@ -149,44 +149,72 @@ index b3ca092..c6d03b4 100644
        parser.separator "Inform options:"
  
 diff --git a/lib/setup/compiler.rb b/lib/setup/compiler.rb
-index b2c8fdd..034d5b1 100644
+index b2c8fdd..a22ff1c 100644
 --- a/lib/setup/compiler.rb
 +++ b/lib/setup/compiler.rb
-@@ -3,7 +3,22 @@ require 'setup/base'
+@@ -3,39 +3,77 @@ require 'setup/base'
  module Setup
  
    #
 -  class Compiler < Base
 +   class Compiler < Base
-+      module Extconf
-+         def self.configure extname, *args
-+            argv = ARGV.dup
-+            cmd = $0.dup
-+            ARGV.replace(args)
-+            $0.replace(extname)
++      class Extconf
++         attr_reader :config, :original_config, :makeconfig, :original_makeconfig, :argv
 +
-+            module_eval("load('#{extname}')")
++         def initialize extfile, *args
++            @extfile = extfile
++            @argv = args
++            @original_config = RbConfig::CONFIG.dup
++            @original_makeconfig = RbConfig::MAKEFILE_CONFIG.dup
++            #@oargv = ARGV.dup
++            RbConfig::MAKEFILE_CONFIG["configure_args"] = args.join(" ")
++            require 'mkmf'
++            RbConfig::CONFIG["srcdir"] = RbConfig::MAKEFILE_CONFIG["srcdir"] = '.'
++
++            init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
++            # $0.replace(File.join(File.dirname(extfile), "fake"))
++         end
++
++         def configure
++            #ARGV.replace(@argv)
++            #binding.pry
++            load(File.basename(@extfile))
++
++            # module_eval("load('#{File.basename(extfile)}')")
++            @config = RbConfig::CONFIG.dup
++            @makeconfig = RbConfig::MAKEFILE_CONFIG.dup
++         rescue SystemExit
 +         rescue Exception => e
 +            $stderr.puts("[#{e.class}]> #{e.message}\t\n#{e.backtrace.join("\t\n")}")
 +         ensure
-+            $0.replace(cmd)
-+            ARGV.replace(argv)
++            # $0.replace(cmd)
++            #ARGV.replace(@oargv)
++            RbConfig::CONFIG.replace(@original_config)
++            RbConfig::MAKEFILE_CONFIG.replace(@original_makeconfig)
 +         end
 +     end
  
      #
      #
-@@ -12,7 +27,8 @@ module Setup
-         source.exttree.each do |dir_in, extfiles|
-           extfiles.each do |extfile|
-             Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
+     def configure
+-      project.sources.each do |source|
+-        source.exttree.each do |dir_in, extfiles|
+-          extfiles.each do |extfile|
+-            Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
 -              ruby("extconf.rb", '--', '--use-system-libraries', '--enable-debug-build')
-+               # binding.pry
-+               Extconf.configure('extconf.rb', '--', '--use-system-libraries', '--enable-debug-build', '--disable-static')
++      @configurations =
++        project.sources.map do |source|
++          source.exttree.map do |dir_in, extfiles|
++            extfiles.map do |extfile|
++              Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
++                 # binding.pry
++                 Extconf.new(extfile, '--use-system-libraries', '--enable-debug-build', '--disable-static', '--srcdir=.').configure
++              end
              end
            end
-         end
-@@ -20,22 +36,23 @@ module Setup
+-        end
+-      end
++        end.flatten
      end
  
      #
@@ -214,7 +242,7 @@ index b2c8fdd..034d5b1 100644
                  Dir.glob(File.join(source.root, ".so.#{source.name}/**/*.so")).each do |file|
                    FileUtils.touch(File.join(File.dirname(file), 'gem.build_complete'))
  
-@@ -43,6 +60,9 @@ module Setup
+@@ -43,6 +81,9 @@ module Setup
                    bash(chrpath_path, '-d', file) if !chrpath_path.empty?
                  end
                end
@@ -224,7 +252,7 @@ index b2c8fdd..034d5b1 100644
              end
            end
          end
-@@ -55,7 +75,7 @@ module Setup
+@@ -55,7 +96,7 @@ module Setup
          source.exttree.each do |dir_in, extfiles|
            extfiles.each do |extfile|
              Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
@@ -233,7 +261,7 @@ index b2c8fdd..034d5b1 100644
              end
            end
          end
-@@ -69,7 +89,7 @@ module Setup
+@@ -69,7 +110,7 @@ module Setup
            extfiles.each do |extfile|
              Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
                Dir.glob('**/gem.build_complete').each { |file| FileUtils.rm_f(file) }
@@ -242,7 +270,7 @@ index b2c8fdd..034d5b1 100644
              end
  
              FileUtils.rm_rf(File.join(source.root, ".so.#{source.name}"))
-@@ -81,7 +101,7 @@ module Setup
+@@ -81,7 +122,7 @@ module Setup
      protected
      #
      #
@@ -877,10 +905,10 @@ index 0000000..347db68
 +   end
 +end
 diff --git a/lib/setup/gemspec.rb b/lib/setup/gemspec.rb
-index 20d096f..c579c58 100644
+index 20d096f..a02b7fc 100644
 --- a/lib/setup/gemspec.rb
 +++ b/lib/setup/gemspec.rb
-@@ -1,12 +1,16 @@
+@@ -1,13 +1,18 @@
  module Setup::Gemspec
 +
     AUTOMAP = {
@@ -895,8 +923,10 @@ index 20d096f..c579c58 100644
 +      Mast: "setup/gemspec/mast",
 +      Jeweler: "setup/gemspec/jeweler",
        Gem: "setup/gemspec/gem",
++      Rakefile: "setup/gemspec/rakefile",
        PackageTask: "setup/gemspec/package_task",
     }
+ 
 diff --git a/lib/setup/gemspec/gem.rb b/lib/setup/gemspec/gem.rb
 index 31cb677..fa6114f 100644
 --- a/lib/setup/gemspec/gem.rb
@@ -1104,9 +1134,18 @@ index 0000000..6ea3973
 +   end
 +end
 diff --git a/lib/setup/gemspec/package_task.rb b/lib/setup/gemspec/package_task.rb
-index a48b121..208e1c7 100644
+index a48b121..829b4a5 100644
 --- a/lib/setup/gemspec/package_task.rb
 +++ b/lib/setup/gemspec/package_task.rb
+@@ -5,7 +5,7 @@ require 'setup/log'
+ # Sample is: ruby-gnome2
+ #
+ module Setup::Gemspec::PackageTask
+-   RE = /\/Rakefile$/
++   RE = /\/(Rakefile|rakefile)$/
+ 
+    class << self
+       include Setup::Log
 @@ -41,7 +41,6 @@ module Setup::Gemspec::PackageTask
              else
                 specs.first
@@ -1154,6 +1193,50 @@ index 0000000..c117a52
 +            end
 +         end
 +      rescue Errno::ENOENT
++      end
++   end
++end
+diff --git a/lib/setup/gemspec/rakefile.rb b/lib/setup/gemspec/rakefile.rb
+new file mode 100644
+index 0000000..d03657c
+--- /dev/null
++++ b/lib/setup/gemspec/rakefile.rb
+@@ -0,0 +1,38 @@
++require 'rake'
++
++module Setup::Gemspec::Rakefile
++   RE = /\/(Rakefile|rakefile)$/
++
++   class << self
++      def parse file
++         stderr = $stderr
++         stdout = $stdout
++         $stderr = $stdout = StringIO.new
++
++         module_name = "M" + Random.srand.to_s
++         mod_code = <<-END
++            module #{module_name}
++               extend(Rake::DSL)
++               pre = ObjectSpace.each_object(Gem::Specification).to_a
++
++               # NOTE this forces not to share namespace but avoid exception when calling
++               # main space methods, see Rakefile of racc gem
++               # also named module is required instead of anonymous one to allow root level defined methods access
++               load('#{file}')
++
++               ObjectSpace.each_object(Gem::Specification).reject { |t| pre.include?(t) }.uniq { |s| s.name }
++            end
++         END
++
++         specs = module_eval(mod_code)
++      rescue Exception => e
++         warn(e.message)
++      else
++         specs.first
++      ensure
++         # TODO puts $stderr into common error log
++         $stderr = stderr
++         $stdout = stdout
 +      end
 +   end
 +end
@@ -1316,10 +1399,10 @@ index 25c3f15..e15aaa7 100644
      #
 diff --git a/lib/setup/rake_app.rb b/lib/setup/rake_app.rb
 new file mode 100644
-index 0000000..55a149a
+index 0000000..2466655
 --- /dev/null
 +++ b/lib/setup/rake_app.rb
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,70 @@
 +class Setup::Rake
 +   attr_reader :app, :rakefile
 +
@@ -1327,10 +1410,12 @@ index 0000000..55a149a
 +      stdout = $stdout
 +      $stdout = $stderr
 +
++      pre = ObjectSpace.each_object(Gem::Specification).to_a.map(&:__id__)
 +      self.class.load(rakefile)
 +   rescue Exception => e
 +      warn(e.message)
 +   ensure
++      @@specs = ObjectSpace.each_object(Gem::Specification).reject { |t| pre.include?(t.__id__) }.uniq { |s| s.name }
 +      $stderr = $stdout
 +      $stdout = stdout
 +   end
