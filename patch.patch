@@ -1,656 +1,652 @@
-diff --git a/.gitignore b/.gitignore
-index 36fa75f..3213538 100644
---- a/.gitignore
-+++ b/.gitignore
-@@ -9,3 +9,6 @@ pkg
- work/sandbox/faux-root
- web
- setup.gemspec
-+*~
-+*.sw*
-+*.patch
-diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
-index 7b8bcc9..e6bba9b 100644
---- a/lib/setup/core_ext.rb
-+++ b/lib/setup/core_ext.rb
-@@ -91,6 +91,7 @@ module Kernel
-       'bones' => 'setup/extcore/bones',
-       'echoe' => 'setup/extcore/echoe',
-       'jeweler' => 'setup/extcore/jeweler',
-+      'hoe' => 'setup/extcore/hoe',
+diff --git a/lib/setup/compiler.rb b/lib/setup/compiler.rb
+index 2254a90..b722ae7 100644
+--- a/lib/setup/compiler.rb
++++ b/lib/setup/compiler.rb
+@@ -1,26 +1,35 @@
+ require 'setup/base'
++require 'setup/rake_app'
++require 'setup/log'
+ 
+ module Setup
+-
+-  #
+    class Compiler < Base
++      include Setup::Log
++
+       class Extconf
+-         attr_reader :config, :original_config, :makeconfig, :original_makeconfig, :argv
++         attr_reader :config, :original_config, :makeconfig, :original_makeconfig, :argv, :extdir, :source
+ 
+-         def initialize extfile, *args
+-            @extfile = extfile
++         def initialize extpath, source, *args
++            @extfile = extpath
++            @extdir = File.dirname(extpath)
+             @argv = args
+             @original_config = RbConfig::CONFIG.dup
+             @original_makeconfig = RbConfig::MAKEFILE_CONFIG.dup
+-            RbConfig::MAKEFILE_CONFIG["configure_args"] = args.join(" ")
+-            require 'mkmf'
+-            RbConfig::CONFIG["srcdir"] = RbConfig::MAKEFILE_CONFIG["srcdir"] = '.'
++            @source = source
++
++            Dir.chdir(@extdir) do
++               RbConfig::MAKEFILE_CONFIG["configure_args"] = args.join(" ")
++               require 'mkmf'
++               RbConfig::CONFIG["srcdir"] = RbConfig::MAKEFILE_CONFIG["srcdir"] = '.'
+ 
+-            init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
++               init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
++            end
+          end
+ 
+          def configure
+-            load(File.join('.', File.basename(@extfile)))
++            Dir.chdir(@extdir) do
++               load(File.join('.', File.basename(@extfile)))
++            end
+ 
+             @config = RbConfig::CONFIG.dup
+             @makeconfig = RbConfig::MAKEFILE_CONFIG.dup
+@@ -40,9 +49,14 @@ module Setup
+         project.valid_sources.map do |source|
+           source.exttree.map do |dir_in, extfiles|
+             extfiles.map do |extfile|
+-              Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
+-                 # binding.pry
+-                 Extconf.new(extfile, '--use-system-libraries', '--enable-debug-build', '--disable-static', '--srcdir=.').configure
++              extpath = File.join(source.root, dir_in, extfile)
++
++              if extpath =~ /rakefile(.rb)?$/i
++                 Setup::Rake.new(extpath, {source: source})
++              else
++                 cfg = Extconf.new(extpath, source, '--use-system-libraries', '--enable-debug-build', '--disable-static', '--srcdir=.')
++                 cfg.configure
++                 cfg
+               end
+             end
+           end
+@@ -53,30 +67,41 @@ module Setup
+     def make
+       chrpath_path = `which chrpath`.strip
+ 
+-      project.valid_sources.each do |source|
+-        source.exttree.each do |dir_in, extfiles|
+-          extfiles.each do |extfile|
+-            dir = File.join(source.root, dir_in, File.dirname(extfile))
+-            headers = Dir.glob("*/**/*.{h,hpp}")
+-
+-            Dir.chdir(dir) do
+-              puts "[#{dir}]$ make #{config.makeprog}"
+-              make_task
+-
+-              # post make
+-              if Dir.glob("**/*.so").any?
+-                FileUtils.mkdir_p File.join(source.root, ".so.#{source.name}", RbConfig::CONFIG['sitearchdir'], target_prefix)
+-                make_task('install', DESTDIR: File.join(source.root, ".so.#{source.name}"))
+-                Dir.glob(File.join(source.root, ".so.#{source.name}/**/*.so")).each do |file|
+-                  FileUtils.touch(File.join(File.dirname(file), 'gem.build_complete'))
+-
+-                  # remove RPATH if any
+-                  bash(chrpath_path, '-d', file) if !chrpath_path.empty?
+-                end
++      @configurations.each do |cfg|
++        case cfg
++        when Setup::Rake
++          cfg.run_task('default')
++          source = cfg.options[:source]
++
++          soes = Dir.glob(File.join(source.root, "**", "*.so"))
++          if soes.any?
++              # NOTE gem hotwater
++              dd = File.join(source.root, ".so.#{source.name}", RbConfig::CONFIG['sitearchdir'])
++              FileUtils.mkdir_p(dd)
++
++              soes.map do |x|
++                FileUtils.touch(File.join(dd, 'gem.build_complete'))
++                FileUtils.cp(x, dd)
++                bash(chrpath_path, '-d', File.join(dd, File.basename(x))) if !chrpath_path.empty?
++              end
++            end
++        when Extconf
++          headers = Dir.glob("*/**/*.{h,hpp}")
++
++          Dir.chdir(cfg.extdir) do
++            debug "[#{cfg.extdir}]$ make #{config.makeprog}"
++            make_task
++
++            # post make
++            if Dir.glob("**/*.so").any?
++              FileUtils.mkdir_p(File.join(cfg.source.root, ".so.#{cfg.source.name}", RbConfig::CONFIG['sitearchdir'], target_prefix))
++              make_task('install', DESTDIR: File.join(cfg.source.root, ".so.#{cfg.source.name}"))
++              Dir.glob(File.join(cfg.source.root, ".so.#{cfg.source.name}/**/*.so")).each do |file|
++                FileUtils.touch(File.join(File.dirname(file), 'gem.build_complete'))
++
++                # remove RPATH if any
++                bash(chrpath_path, '-d', file) if !chrpath_path.empty?
+               end
+-
+-              #cleanup
+-
+             end
+           end
+         end
+diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
+index 58eda25..f537633 100644
+--- a/lib/setup/deps.rb
++++ b/lib/setup/deps.rb
+@@ -17,8 +17,10 @@ class Setup::Deps
+          proc { |target| target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_dyno(target.source, 'doc') },
+       },
+       'devel' => {
+-         proc { |target| target.source.inctree.any? &&
+-                         target.source.is_a?(Setup::Source::Gem) } => proc { |this, target| this.deps_dyno(target.source, 'devel') },
++         proc { |target|
++            target.source.is_a?(Setup::Source::Gem) &&
++           (target.source.inctree.any? ||
++            target.source.dsl.original_deps.any?) }                => proc { |this, target| this.deps_dyno(target.source, 'devel', :dsl) },
+       }
     }
  
-    def config
-@@ -215,6 +216,12 @@ class String
-          res || self.dup.sub!(re, char)
-       end.to_s
-    end
-+
-+   def constantize
-+      self.split('::').reduce(Object) do |c, token|
-+        token.empty? && c || c.const_get(token)
-+      end
-+   end
- end
+@@ -68,7 +70,18 @@ class Setup::Deps
  
- class Symbol
+    ## deps
+    def deps_gem_dsl dsl, set = 'lib'
+-      deps = set == 'bin' && dsl.runtime_deps(:gemfile) || dsl.runtime_deps(:gemspec)
++      deps =
++         case set
++         when 'bin'
++            # TODO remove gemspec deps in favor of gemfile
++            # dsl.runtime_deps(:gemfile)
++            dsl.runtime_deps(:gemspec)
++         when 'devel'
++            dsl.development_deps(:gemspec)
++         else
++            dsl.runtime_deps(:gemspec)
++         end
++
+       list = []
+ 
+       deps.each do |dep|
+@@ -81,8 +94,12 @@ class Setup::Deps
+       ruby_version = dsl.required_ruby_version
+       rubygems_version = dsl.required_rubygems_version
+ 
+-      list << self.class.to_rpm(ruby_version).map { |a, b| "#{ruby} #{a} #{b}" }
+-      list << "rubygems #{rubygems_version}"
++      if /lib|bin/ =~ set
++         list << self.class.to_rpm(ruby_version).map { |a, b| "#{ruby} #{a} #{b}" }
++         list << "rubygems #{rubygems_version}"
++      end
++
++      list
+    end
+ 
+    def deps_ruby_version
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index 36f327c..501344f 100755
+index 3d4eca3..6538b40 100755
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
-@@ -124,7 +124,7 @@ class Setup::DSL
-             s || name == dep.name && req
-          end
- 
--         new_req && Bundler::Dependency.new(dep.name, Gem::Requirement.new([new_req]), options: { "type" => dep.type }) || dep
-+         new_req && Bundler::Dependency.new(dep.name, Gem::Requirement.new([new_req]), "type" => dep.type) || dep
-       end.compact | append_list
+@@ -28,7 +28,7 @@ class Setup::DSL
     end
  
-diff --git a/lib/setup/extcore/bones.rb b/lib/setup/extcore/bones.rb
-index 2b97962..fe4cb2f 100644
---- a/lib/setup/extcore/bones.rb
-+++ b/lib/setup/extcore/bones.rb
-@@ -46,8 +46,8 @@ module Bones
+    def gemfile
+-      gemfiles.first || original_gemfile || fake_gemfile
++      gemfiles.first || original_gemfile || fake_gemfile_path
     end
  
-    module Methods
--      def name value
--         Bones.config.gem._spec.name = value
-+      def name value = nil
-+         Bones.config.gem._spec.name = value if value
+    def original_gemfile
+@@ -45,12 +45,24 @@ class Setup::DSL
+       gemfile && Pathname.new(gemfile) || nil
+    end
+ 
+-   def fake_gemfile
+-      @fake_gemfile = Tempfile.create('Gemfile').path
++   def fake_gemfile_path
++      if @fake_gemfile ||= Tempfile.create('Gemfile')
++         @fake_gemfile_path = @fake_gemfile.path
+ 
+-      Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", @fake_gemfile
++         Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", @fake_gemfile_path
++      end
++
++      @fake_gemfile_path
++   end
++
++   def fake_gemlock_path
++      if @fake_gemlock ||= Tempfile.create('Gemfile.lock')
++         @fake_gemlock_path = @fake_gemlock.path
++
++         Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", @fake_gemlock_path
++      end
+ 
+-      @fake_gemfile
++      @fake_gemlock_path
+    end
+ 
+    def dsl
+@@ -63,6 +75,7 @@ class Setup::DSL
+                   dsl
+                end
+          rescue LoadError,
++                TypeError,
+                 Bundler::GemNotFound,
+                 Bundler::GemfileNotFound,
+                 Bundler::VersionConflict,
+@@ -71,8 +84,8 @@ class Setup::DSL
+                 ::Gem::InvalidSpecificationException => e
+ 
+             dsl = Bundler::Dsl.new
+-            dsl.instance_variable_set(:@gemfiles, [Pathname.new(fake_gemfile)])
+-            dsl.to_definition(Tempfile.create('Gemfile.lock').path, {})
++            dsl.instance_variable_set(:@gemfiles, [Pathname.new(fake_gemfile_path)])
++            dsl.to_definition(fake_gemlock_path, {})
+             Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", nil
+ 
+             dsl
+@@ -108,7 +121,13 @@ class Setup::DSL
+    end
+ 
+    def original_deps
+-      @original_deps ||= definition.dependencies
++      @original_deps ||= definition.dependencies.map do |dep|
++         type = dep.groups.map {|g| GROUP_MAPPING[g]}.compact.uniq.sort.first || dep.type
++         dep.instance_variable_set(:@type, type)
++         valid = !dep.source.is_a?(Bundler::Source::Path)
++
++         valid && dep || nil
++      end.compact
+    end
+ 
+    def gemspecs
+@@ -116,19 +135,27 @@ class Setup::DSL
+    end
+ 
+    def extracted_gemspec_deps
++      gemspecs.map { |gs| gs.dependencies }.flatten.uniq
++   end
++
++   def extracted_gemspec_runtime_deps
+       gemspecs.map do |gs|
+          gs.dependencies.select {|dep|dep.runtime?}
+-      end.flatten
++      end.flatten.uniq
+    end
+ 
+    def runtime_deps kind = :gemspec
+       if kind == :gemspec
+-         deps_but(extracted_gemspec_deps)
++         deps_but(extracted_gemspec_runtime_deps)
+       else
+          deps_but(original_deps_for(:runtime))
        end
+    end
  
-       def authors value
++   def development_deps kind = :gemspec
++      deps_but(original_deps_for(:development))
++   end
++
+    def defined_groups_for kinds_in = nil
+       no_groups =
+          [kinds_in].compact.flatten.map do |k|
+@@ -168,12 +195,16 @@ class Setup::DSL
+ 
+    def to_ruby
+       spec = self.spec.dup
+-      spec.dependencies.replace(deps_but(original_deps))
++      deps_in = deps_but(extracted_gemspec_deps)
++      deps = spec.dependencies.map {|x| deps_in.find {|a| a.name == x.name }}.compact
++      spec.dependencies.replace(deps)
++      STDERR.puts('------------------------')
++      STDERR.puts(spec.to_ruby.inspect)
+       spec.to_ruby
+    end
+ 
+    def to_gemfile
+-      deps.group_by { |d| d.name }.map do |name, deps|
++      deps_but(original_deps).group_by { |d| d.name }.map do |name, deps|
+          reqs = deps.map do |dep|
+             reqs = dep.requirement.requirements.map {|r| "'#{r[0]} #{r[1]}'" }.join(", ")
+          end.join(", ")
+@@ -197,7 +228,7 @@ class Setup::DSL
+    end
+ 
+    def required_ruby_version
+-      @required_ruby_version ||= Gem::Requirement.new(dsl.instance_variable_get(:@ruby_version)&.engine_versions) || ">= 0"
++      @required_ruby_version ||= Gem::Requirement.new(dsl.instance_variable_get(:@ruby_version)&.engine_versions || ">= 0")
+    end
+ 
+    def required_ruby
 diff --git a/lib/setup/extcore/hoe.rb b/lib/setup/extcore/hoe.rb
-new file mode 100644
-index 0000000..815a8cc
---- /dev/null
+index f81887b..dbdc565 100644
+--- a/lib/setup/extcore/hoe.rb
 +++ b/lib/setup/extcore/hoe.rb
-@@ -0,0 +1,2 @@
-+class Hoe
-+end
-diff --git a/lib/setup/extcore/jeweler.rb b/lib/setup/extcore/jeweler.rb
-index 347db68..c68d3f0 100644
---- a/lib/setup/extcore/jeweler.rb
-+++ b/lib/setup/extcore/jeweler.rb
-@@ -48,7 +48,7 @@ class Jeweler
-          if /(?<name>\w+)=/ =~ name_in
-             @data[name] = args.first
-          else
--            raise
-+            super
-          end
+@@ -117,6 +117,10 @@ class Hoe
+          []
        end
-    end
-diff --git a/lib/setup/gemspec/bones.rb b/lib/setup/gemspec/bones.rb
-index 1fa767f..7da4d7a 100644
---- a/lib/setup/gemspec/bones.rb
-+++ b/lib/setup/gemspec/bones.rb
-@@ -1,42 +1,22 @@
--require 'rake'
--
--require 'setup/log'
--
--# Hoe based gemspec detection module
-+# Bones based gemspec detection module
- # Sample gems are: bones, loquacious, little-plugger
- #
-+require 'setup/loader'
+ 
++      def rdoc_locations
++         []
++      end
 +
- module Setup::Gemspec::Bones
--   RE = /\/Rakefile$/
-+   extend ::Setup::Loader
+       # spec
+       def spec name = nil, &block
+          main
+@@ -155,14 +159,32 @@ class Hoe
+          @spec.spec.executables = @spec.spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
+          @spec.spec.bindir = 'bin'
  
--   class << self
--      include Setup::Log
-+   RE = /\/Rakefile$/i
+-         version = IO.read(history_file).split("\n").reduce(nil) { |res, x| res || /(===|##) (?<version>[^ ]+)/ =~ x && version }
++         version = IO.read(history_file).split("\n").reduce(nil) { |res, x| res || /(=+|#+) v?(?<version>[^ ]+)/ =~ x && version }
+          @spec.spec.version = version
  
-+   class << self
-       def parse rakefile
--         if File.file?(rakefile)
--            begin
--               stdout = $stdout
--               $stdout = $stderr
--
--               mod_code = <<-END
--                  extend(Rake::DSL)
--                  # NOTE this forces not to share namespace but avoid exception when calling
--                  # main space methods, see Rakefile of racc gem
--                  Dir.chdir(File.dirname('#{rakefile}')) do
--                     load(File.basename('#{rakefile}'), true)
--                  end
--
--                  if defined? ::Bones
--                     ::Bones.config.gem._spec.version && ::Bones.config.gem._spec
--                  end
--               END
--               module_eval(mod_code)
--            rescue Exception => e
--               warn(e.message)
--            ensure
--               $stderr = $stdout
--               $stdout = stdout
--            end
-+         mm = app_file(rakefile) do |_|
-+            ::Bones.config.gem._spec.version && ::Bones.config.gem._spec
-          end
+-         description = IO.read(readme_file).split(/(===|##)/).reduce(nil) { |res, x| res || /^ Description(?<desc>.*)/m =~ x && desc }&.strip
++         readme = IO.read(readme_file)
++         description = readme.split(/(=+|#+)/).reduce(nil) { |res, x| res || /^ Description:?(?<desc>.*)/im =~ x && desc }&.strip
 +
-+         mm.objects.first
-+      rescue NameError
-+         nil
-       end
-    end
- end
-diff --git a/lib/setup/gemspec/echoe.rb b/lib/setup/gemspec/echoe.rb
-index e01cf5d..0ef58e2 100644
---- a/lib/setup/gemspec/echoe.rb
-+++ b/lib/setup/gemspec/echoe.rb
-@@ -1,46 +1,19 @@
--require 'rake'
--
--require 'setup/log'
--
- # Echoe based gemspec detection module
- # Sample gems are: echoe
- #
-+require 'setup/loader'
+          @spec.spec.description ||= description
+-         @spec.spec.summary ||= description
++         @spec.spec.summary ||= description.to_s.split(/[.(!]/).first
+ 
+-         Dir.glob(Dir.pwd + '/lib/hoe/*.rb').each { |x| require_relative(x) }
++         /code ::(?<url>.*)|^\* (?<url>http.*)/ =~ readme
++         @spec.spec.metadata["source_code_uri"] = url&.strip
 +
- module Setup::Gemspec::Echoe
--   RE = /\/Rakefile$/
-+   extend ::Setup::Loader
- 
--   class << self
--      include Setup::Log
-+   RE = /\/Rakefile$/i
-+   TYPE = 'Echoe'
- 
-+   class << self
-       def parse rakefile
--         if File.file?(rakefile)
--            begin
--               stdout = $stdout
--               $stdout = $stderr
--
--               mod_code = <<-END
--                  extend(Rake::DSL)
--                  # NOTE this forces not to share namespace but avoid exception when calling
--                  # main space methods, see Rakefile of racc gem
--                  Dir.chdir(File.dirname('#{rakefile}')) do
--                     load(File.basename('#{rakefile}'), true)
--                  end
-+         mm = app_file(rakefile)
- 
--                  # NOTE after the block is finished all the local vars are disappeared, so
--                  # do processing spec here
--                  if defined? ::Echoe
--                     ObjectSpace.each_object(::Echoe).map { |h| h.spec }.uniq { |x| x.name }
--                  end
--               END
--               specs = module_eval(mod_code) || []
--            rescue Exception => e
--               warn(e.message)
--            else
--               specs.first
--            ensure
--               $stderr = $stdout
--               $stdout = stdout
--            end
--         end
-+         mm.objects.map {|o| o.spec }.uniq {|s| s.name }.first
-       end
-    end
- end
-diff --git a/lib/setup/gemspec/gem.rb b/lib/setup/gemspec/gem.rb
-index fa6114f..a9ca1dd 100644
---- a/lib/setup/gemspec/gem.rb
-+++ b/lib/setup/gemspec/gem.rb
-@@ -1,5 +1,13 @@
-+# default gem specification based gemspec detection module
-+# example: "polyglot" gem
-+#
-+require 'setup/loader'
++         if /home ::(?<url>.*)|^\* (?<url>http.*)/ =~ readme
++            @spec.spec.homepage = url.strip
++            @spec.spec.metadata["homepage_uri"] = url.strip
++            @spec.spec.metadata["source_code_uri"] ||= /github.com|bitbucket.com/ =~ url && url.strip || nil
++         end
++         dependency("rdoc", ">= 4.0", :development) if @spec.spec.files.grep(/.rdoc$/).any? || /rdoc ::/ =~ readme
 +
- module Setup::Gemspec::Gem
--   RE = /\.gemspec$/
-+   extend ::Setup::Loader
-+
-+   RE = /\.gemspec$/i
-+   TYPE = 'Gem::Specification'
++         Dir.glob(Dir.pwd + '/lib/hoe/*.rb').each do |x|
++            begin
++               require_relative(x)
++            rescue Exception
++               nil
++            end
++         end
+          self.constants.map {|c| self.const_get(c) }.select {|x| x.is_a?(Module) }.each {|x| extend(x) }
+          if self.respond_to?("initialize_#{@spec.spec.name}")
+             send("initialize_#{@spec.spec.name}")
+diff --git a/lib/setup/installer.rb b/lib/setup/installer.rb
+index ac124f1..df9752b 100644
+--- a/lib/setup/installer.rb
++++ b/lib/setup/installer.rb
+@@ -202,11 +202,15 @@ module Setup
+     def install_gemspec
+       io.puts "* {.gemspec} ->" unless quiet?
  
-    class << self
-       def load_from file
-@@ -22,32 +30,12 @@ module Setup::Gemspec::Gem
-       end
++      STDERR.puts('//////////////////////////')
+       targets.each do |target|
+         if target.source.is_a?(Setup::Source::Gem)
+           io.puts "  %#{target.source.name}" unless quiet?
  
-       def parse file
--         spec = nil
--
-          dir = File.dirname(file)
-          $:.unshift(File.join(dir, "lib"))
-          $:.unshift(dir)
--         FileUtils.chdir(dir) { spec = load_from(File.basename(file)) }
--         if !spec
--            module_name = "M" + Random.srand.to_s
--            propfile = File.basename(file)
--            mod_code = <<-END
--               module #{module_name}
--                  extend(Rake::DSL)
--                  # NOTE this forces not to share namespace but avoid exception when calling
--                  # main space methods, see Rakefile of racc gem
--                  # also named module is required instead of anonymous one to allow root level defined methods access
--                  load('#{propfile}')
--               end
--            END
--            spec_ids = ObjectSpace.each_object(Gem::Specification).to_a.map {|s|s.__id__}
--            FileUtils.chdir(dir) { module_eval(mod_code) }
--            spec = ObjectSpace.each_object(Gem::Specification).to_a.select {|s| !spec_ids.include?(s.__id__) }.first
--         end
-+         spec = FileUtils.chdir(dir) { load_from(File.basename(file)) }
- 
--         spec
--      rescue Exception => e
--         $stderr.puts "WARN [#{e.class}]: #{e.message}"
-+         spec || app_file(file).objects.first
-       ensure
-          $:.shift
-          $:.shift
-diff --git a/lib/setup/gemspec/hoe.rb b/lib/setup/gemspec/hoe.rb
-index 9e081db..407196a 100644
---- a/lib/setup/gemspec/hoe.rb
-+++ b/lib/setup/gemspec/hoe.rb
-@@ -1,51 +1,19 @@
--require 'rake'
--
--require 'setup/log'
- # Hoe based gemspec detection module
- # Sample gems are: hoe, racc, nokogiri
- #
--module Setup::Gemspec::Hoe
--   RE = /\/Rakefile$/
--
--   class << self
--      include Setup::Log
-+require 'setup/loader'
- 
--      def has_hoe?
--         require('hoe')
-+module Setup::Gemspec::Hoe
-+   extend ::Setup::Loader
- 
--         defined? Hoe
--      rescue Exception
--      end
-+   RE = /\/Rakefile$/i
-+   TYPE = 'Hoe'
- 
-+   class << self
-       def parse rakefile
--         if File.file?(rakefile) && has_hoe?
--            begin
--               stdout = $stdout
--               stderr = $stderr
--               $stdout = $stderr = Tempfile.new('package-task')
--
--               module_name = "M" + Random.srand.to_s
--               mod_code = <<-END
--                  module #{module_name}
--                     extend(Rake::DSL)
--                     # NOTE this forces not to share namespace but avoid exception when calling
--                     # main space methods, see Rakefile of racc gem
--                     # also named module is required instead of anonymous one to allow root level defined methods access
--                     load('#{rakefile}')
--                  end
-+         mm = app_file(rakefile)
- 
--                  ObjectSpace.each_object(Hoe).map { |h| h.spec }.compact
--               END
--               specs = module_eval(mod_code)
--            rescue Exception => e
--               warn(e.message)
--            else
--               specs.first
--            ensure
--               $stderr = stderr
--               $stdout = stdout
--            end
--         end
-+         mm.objects.map {|o| o.spec }.first
-       end
-    end
- end
-diff --git a/lib/setup/gemspec/jeweler.rb b/lib/setup/gemspec/jeweler.rb
-index eab3592..dea8693 100644
---- a/lib/setup/gemspec/jeweler.rb
-+++ b/lib/setup/gemspec/jeweler.rb
-@@ -1,37 +1,19 @@
--# POM xml based gemspec detection module
-+# jeweler tasks based gemspec detection module
- # example: "polyglot" gem
- #
-+require 'setup/loader'
-+
- module Setup::Gemspec::Jeweler
--   RE = /\/Rakefile$/
-+   extend ::Setup::Loader
- 
--   class << self
--      def parse propfile
--         begin
--            stdout = $stdout
--            stderr = $stderr
--            $stdout = $stderr = Tempfile.new('package-task')
-+   RE = /\/Rakefile$/i
-+   TYPE = 'Jeweler::Tasks'
- 
--            module_name = "M" + Random.srand.to_s
--            mod_code = <<-END
--               module #{module_name}
--                  extend(Rake::DSL)
--                  # NOTE this forces not to share namespace but avoid exception when calling
--                  # main space methods, see Rakefile of racc gem
--                  # also named module is required instead of anonymous one to allow root level defined methods access
--                  load('#{propfile}')
--               end
-+   class << self
-+      def parse rakefile
-+         mm = app_file(rakefile)
- 
--               ObjectSpace.each_object(Jeweler::Tasks).map { |h| h.spec }.compact
--            END
--            specs = module_eval(mod_code)
--         rescue Exception => e
--            warn(e.message)
--         else
--            specs.first
--         ensure
--            $stderr = stderr
--            $stdout = stdout
--         end
-+         mm.objects.map {|o| o.spec }.first
-       end
-    end
- end
-diff --git a/lib/setup/gemspec/package_task.rb b/lib/setup/gemspec/package_task.rb
-index 829b4a5..9afdae5 100644
---- a/lib/setup/gemspec/package_task.rb
-+++ b/lib/setup/gemspec/package_task.rb
-@@ -1,50 +1,19 @@
--require 'rake'
--
--require 'setup/log'
--# PackageTask based gemspec detection module
-+# Gem::PackageTask based gemspec detection module
- # Sample is: ruby-gnome2
- #
-+require 'setup/loader'
-+
- module Setup::Gemspec::PackageTask
--   RE = /\/(Rakefile|rakefile)$/
-+   extend ::Setup::Loader
- 
--   class << self
--      include Setup::Log
-+   RE = /\/Rakefile$/i
-+   TYPE = 'Gem::PackageTask'
- 
-+   class << self
-       def parse rakefile
--         if rakefile && File.file?(rakefile)
--            begin
--               stdout = $stdout
--               stderr = $stderr
--               $stdout = $stderr = Tempfile.new('package-task')
--
--               require 'rake'
--               require 'rubygems/package_task'
--
--               mod_code = <<-END
--                  extend(Rake::DSL)
--
--                  pre = ObjectSpace.each_object(Gem::PackageTask).to_a
--
--                  dir = File.dirname('#{rakefile}')
--                  Dir.chdir(dir) do
--                     load('#{rakefile}', true)
--                     # in some cases __dir__ is nil inside the Rakefile, but should not
--                     #__dir__ ||= dir
--                     #eval(IO.read('#{rakefile}'))
--                  end
-+         mm = app_file(rakefile)
- 
--                  ObjectSpace.each_object(Gem::PackageTask).reject { |t| pre.include?(t) }.map { |h| h.gem_spec }.uniq { |s| s.name }
--               END
--               specs = module_eval(mod_code)
--            rescue Exception => e
--               warn(e.message)
--            else
--               specs.first
--            ensure
--               $stderr = stderr
--               $stdout = stdout
--            end
--         end
-+         mm.objects.map {|o| o.gem_spec }.uniq { |s| s.name }.first
-       end
-    end
- end
-diff --git a/lib/setup/gemspec/rakefile.rb b/lib/setup/gemspec/rakefile.rb
-index d03657c..15f997e 100644
---- a/lib/setup/gemspec/rakefile.rb
-+++ b/lib/setup/gemspec/rakefile.rb
-@@ -1,38 +1,19 @@
--require 'rake'
-+# gemspec detection module in a pure rakefile
-+# no example
-+#
-+require 'setup/loader'
- 
- module Setup::Gemspec::Rakefile
--   RE = /\/(Rakefile|rakefile)$/
-+   extend ::Setup::Loader
- 
--   class << self
--      def parse file
--         stderr = $stderr
--         stdout = $stdout
--         $stderr = $stdout = StringIO.new
--
--         module_name = "M" + Random.srand.to_s
--         mod_code = <<-END
--            module #{module_name}
--               extend(Rake::DSL)
--               pre = ObjectSpace.each_object(Gem::Specification).to_a
-+   RE = /\/Rakefile$/i
-+   TYPE = 'Gem::Specification'
- 
--               # NOTE this forces not to share namespace but avoid exception when calling
--               # main space methods, see Rakefile of racc gem
--               # also named module is required instead of anonymous one to allow root level defined methods access
--               load('#{file}')
--
--               ObjectSpace.each_object(Gem::Specification).reject { |t| pre.include?(t) }.uniq { |s| s.name }
--            end
--         END
-+   class << self
-+      def parse rakefile
-+         mm = app_file(rakefile)
- 
--         specs = module_eval(mod_code)
--      rescue Exception => e
--         warn(e.message)
--      else
--         specs.first
--      ensure
--         # TODO puts $stderr into common error log
--         $stderr = stderr
--         $stdout = stdout
-+         mm.objects.map {|o| o.spec }.uniq { |s| s.name }.first
-       end
-    end
- end
+-          novel_install_files([target.source.gemspec_path],
++          ppp=target.source.gemspec_path
++          STDERR.puts('|||||||||||||||||||||||/')
++          STDERR.puts(IO.read(ppp).inspect)
++          novel_install_files([ppp],
+                               target.specdir,
+                               options.merge(mode: 0644,
+                                             as: "#{target.source.fullname}.gemspec"))
 diff --git a/lib/setup/loader.rb b/lib/setup/loader.rb
-new file mode 100644
-index 0000000..31a670b
---- /dev/null
+index 965b621..84a2342 100644
+--- a/lib/setup/loader.rb
 +++ b/lib/setup/loader.rb
-@@ -0,0 +1,115 @@
-+require 'setup'
-+require 'rake'
+@@ -12,6 +12,14 @@ module Setup::Loader
+ 
+       attr_reader :object_hash, :object_ids
+ 
++      alias_method :require_orig, :require
 +
-+module Setup::Loader
-+   module Certain
-+      include(Rake::DSL)
-+
-+      def store_object_hash type_hash
-+         object_hash =
-+            type_hash.map do |(klass, types)|
-+               objects = types.split(',').map do |type|
-+                  begin
-+                     ObjectSpace.each_object(type.constantize).map { |h| h }
-+                  rescue NameError
-+                     []
-+                  end
-+               end.flatten
-+
-+               [klass, objects]
-+            end.to_h
-+
-+         if @object_hash
-+            @object_hash = object_hash.map do |(k, oh)|
-+               [k, oh - @object_hash[k]]
-+            end.to_h
-+         else
-+            @object_hash = object_hash
-+         end
++      def require *args
++         require_orig(*args)
++      rescue LoadError
++         true
 +      end
 +
-+      def load_file file, type_hash
-+         # NOTE this forces not to share namespace but avoid exception when calling
-+         # main space methods, see Rakefile of racc gem
-+         # also named module is required instead of anonymous one to allow root level defined methods access
-+         store_object_hash(type_hash)
-+
-+         Dir.chdir(File.dirname(file)) do
-+            load(File.basename(file), true)
-+         end
-+
-+         store_object_hash(type_hash)
-+
-+         self
-+      end
-+
-+      def object_hash
-+         @object_hash
-+      end
-+   end
-+
-+   def self.extended_list
-+      @extended_list ||= []
-+   end
-+
-+   def self.extended kls
-+      extended_list << kls
-+   end
-+
-+   def type_hash
-+      @type_hash ||=
+       def store_object_hash type_hash
+          object_hash =
+             type_hash.map do |(klass, types)|
+@@ -82,7 +90,9 @@ module Setup::Loader
+ 
+       def pop
+          debug("Subtract paths: " + ($: - @paths).join("\n\t"))
+-         $:.replace($: | @paths)
++         # NOTE this sequency of merging is required to correct loading libs leads
++         # to show warning and break building rdoc documentation
++         $:.replace(@paths | $:)
+          debug("Replaced paths with: " + $:.join("\n\t"))
+       end
+    end
+@@ -109,6 +119,19 @@ module Setup::Loader
+          end.select {|(_, type)| type }.to_h
+    end
+ 
++   def pre_loaders
++      @pre_loaders ||=
 +         Setup::Loader.extended_list.map do |kls|
-+            type =
-+               begin
-+                  kls.const_get('TYPE')
-+               rescue
-+                  nil
-+               end
-+
-+            [kls, type]
-+         end.select {|(_, type)| type }.to_h
++            begin
++               kls.const_get('PRELOAD_MATCHER')&.map do |k, v|
++                  [k, v.is_a?(Symbol) && kls.singleton_method(v) || v]
++               end.to_h || {}
++            rescue
++               {}
++            end
++         end.reduce {|res, hash| res.merge(hash) }
 +   end
 +
-+   def mods
-+      @mods ||= {}
-+   end
-+
-+   def load_file file
-+      stdout = $stdout
-+      stderr = $stderr
-+      $stdout = $stderr = Tempfile.new('loader')
-+
-+      module_name = "M" + Random.srand.to_s
-+      mod_code = <<-END
-+         module #{module_name}
-+            extend(::Setup::Loader::Certain)
+    def mods
+       @@mods ||= {}
+    end
+@@ -119,6 +142,13 @@ module Setup::Loader
+       stderr = $stderr
+       $stdout = $stderr = Tempfile.new('loader')
+ 
++      pre_loaders.each do |(m, preload_method)|
++         if file =~ m
++            args = [file][0...preload_method.arity]
++            preload_method[*args]
 +         end
-+      END
-+
-+      mod = module_eval(mod_code)
-+      mod.load_file(file, type_hash)
-+      log = $stdout.readlines
-+      errlog = $stderr.readlines
-+
-+      OpenStruct.new(mod: mod, log: log, errlog: errlog, object_hash: mod.object_hash)
-+   rescue Exception => e
-+      warn(e.message)
-+      OpenStruct.new(object_hash: {})
-+   ensure
-+      $stderr = stderr
-+      $stdout = stdout
-+   end
-+
-+   def app_file file, &block
-+      mods[file] ||= load_file(file)
-+
-+      mod = mods[file].dup
-+      objects = mod.object_hash[self]
-+      if block_given?
-+         objects = [yield(objects)].flatten.compact
 +      end
-+      mod.objects = objects || []
 +
-+      mod
-+   end
-+end
+       module_name = "M" + Random.srand.to_s
+       mod_code = <<-END
+          module #{module_name}
+diff --git a/lib/setup/loader/yaml.rb b/lib/setup/loader/yaml.rb
+index b1618d2..a9477ae 100644
+--- a/lib/setup/loader/yaml.rb
++++ b/lib/setup/loader/yaml.rb
+@@ -1,12 +1,12 @@
+-module Setup::Loader::YAML
++module Setup::Loader::Yaml
+    def yaml file
+       spec = Gem::Specification.from_yaml(IO.read(file))
+ 
+-      file = Tempfile.new(spec.name)
+-      file.puts(spec.to_ruby)
+-      file.close
+-      res = app_file(file.path)
+-      file.unlink
++      @file = Tempfile.new(spec.name)
++      @file.puts(spec.to_ruby)
++      @file.close
++      res = app_file(@file.path)
++      @file.unlink
+       res
+    rescue => e
+       nil
 diff --git a/lib/setup/rake_app.rb b/lib/setup/rake_app.rb
-index 2466655..f72fd83 100644
+index 9fcdbcf..25561d7 100644
 --- a/lib/setup/rake_app.rb
 +++ b/lib/setup/rake_app.rb
-@@ -1,4 +1,10 @@
-+require 'setup/loader'
-+
- class Setup::Rake
-+   extend ::Setup::Loader
-+
-+   TYPE = 'Jeweler::Tasks'
-+
-    attr_reader :app, :rakefile
+@@ -8,8 +8,9 @@ class Setup::Rake
+    class InvalidRakefileError < StandardError; end
  
-    def load
-@@ -49,22 +55,13 @@ class Setup::Rake
+    TYPE = 'Rake::Application'
++   PRELOAD_MATCHER = { /\/rakefile(.rb)?$/i => :preload }
+ 
+-   attr_reader :app, :rakefile
++   attr_reader :app, :rakefile, :options
+ 
+    def blank?
+       !@app
+@@ -24,23 +25,33 @@ class Setup::Rake
+    end
+ 
+    def run_task task_name
+-      Rake.instance_variable_set(:@application, @app)
+-      @app&.invoke_task(task_name)
++      if @app
++         Rake.instance_variable_set(:@application, @app)
++
++         Dir.chdir(@app.original_dir) do
++            @app.invoke_task(task_name)
++         end
++      end
+    rescue Exception => e
+       warn "#{e.class}: #{e.message}\n\t#{e.backtrace.join("\n\t")}"
+    end
+ 
+-   def initialize rakefile
++   def initialize rakefile, options = {}
+       raise InvalidRakefileError unless File.file?(rakefile)
+ 
+       @rakefile = rakefile
+-      @app = self.class.load(rakefile)
++      @options = options
++      @app = self.class.load(rakefile).objects.first
+    end
  
     class << self
-       def load rakefile
--         module_name = "M" + Random.srand.to_s
--         mod_code = <<-END
--            module #{module_name}
--               extend(Rake::DSL)
--               # NOTE this forces not to share namespace but avoid exception when calling
--               # main space methods, see Rakefile of racc gem
--               Dir.chdir(File.dirname('#{rakefile}')) do
--                  load(File.basename('#{rakefile}'), true)
--               end
-+         mm = app_file(rakefile) do |_|
-+            app = Rake.instance_variable_get(:@application)
-+            Rake.instance_variable_set(:@application, nil)
-+            app
-+         end
- 
--               app = Rake.instance_variable_get(:@application)
--               Rake.instance_variable_set(:@application, nil)
--               app
--            end
--         END
--         module_eval(mod_code)
-+         mm.objects.first
+-      def load rakefile
++      # preload callback
++      def preload
+          Rake.instance_variable_set(:@application, nil)
+-         app_file(rakefile).objects.first
++      end
++
++      def load rakefile
++         app_file(rakefile)
        end
     end
  end
+diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
+index 940dbbc..9383870 100644
+--- a/lib/setup/source/base.rb
++++ b/lib/setup/source/base.rb
+@@ -26,7 +26,7 @@ class Setup::Source::Base
+    RI_RE       = /\.ri$/
+    INC_RE      = /\.(h|hpp)$/
+    MAN_RE      = /\.[1-8](.ronn)?$/
+-   EXT_RE      = /\bextconf.rb$/
++   EXT_RE      = /\b(.*\.rb|rakefile(\.rb)?)$/i
+    DATA_RE     = ->(s) do
+          dirs = s.extdirs | s.libdirs | s.appdirs | s.exedirs |
+             s.confdirs | s.testdirs | s.mandirs | s.supdirs |
+diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
+index c332f3c..5809e8e 100644
+--- a/lib/setup/source/gem.rb
++++ b/lib/setup/source/gem.rb
+@@ -13,7 +13,7 @@ require 'setup/loader/git-version-gen'
+ 
+ class Setup::Source::Gem < Setup::Source::Base
+    extend ::Setup::Loader
+-   extend ::Setup::Loader::YAML
++   extend ::Setup::Loader::Yaml
+    extend ::Setup::Loader::Pom
+    extend ::Setup::Loader::Mast
+    extend ::Setup::Loader::Rookbook
+@@ -26,9 +26,7 @@ class Setup::Source::Gem < Setup::Source::Base
+ 
+    EXE_DIRS = ->(s) { s.spec.bindir || s.exedir || nil }
+    EXT_DIRS = ->(s) do
+-      s.spec.extensions.select do |file|
+-         /extconf\.rb$/ =~ file
+-      end.map do |file|
++      s.spec.extensions.map do |file|
+          File.dirname(file)
+       end.uniq
+    end
+@@ -130,9 +128,9 @@ class Setup::Source::Gem < Setup::Source::Base
+ 
+    def gemfile
+       @gemfile ||= Setup::Source::Gemfile.new(
+-         source_file: gemfile_name && File.join(root, gemfile_name) || dsl.fake_gemfile,
++         source_file: gemfile_name && File.join(root, gemfile_name) || dsl.fake_gemfile_path,
+          gem_version_replace: options[:gem_version_replace],
+-         gem_skip_list: dsl.deps.map(&:name),
++         gem_skip_list: [], # dsl.deps.map(&:name),
+          gem_append_list: [ self.dep ])
+    end
+ 
+@@ -160,33 +158,37 @@ class Setup::Source::Gem < Setup::Source::Base
+    end
+ 
+    def gemspec_path
+-      gemspec_file = Tempfile.create('gem.')
+-      gemspec_file.puts(dsl.to_ruby)
+-      gemspec_file.rewind
+-      gemspec_file.path
++      if @gemspec_file ||= Tempfile.create('gemspec.')
++         @gemspec_file.puts(dsl.to_ruby)
++         @gemspec_file.rewind
++      end
++
++      @gemspec_path ||= @gemspec_file.path
+    end
+ 
+    def gemfile_path
+       if gemfile.dsl.valid?
+-         gemfile_file = Tempfile.create('Gemfile.')
+-         gemfile_file.puts(gemfile.dsl.to_gemfile)
+-         gemfile_file.rewind
+-         gemfile_file.path
++         if @gemfile_file ||= Tempfile.create('Gemfile.')
++            @gemfile_file.puts(gemfile.dsl.to_gemfile)
++            @gemfile_file.rewind
++         end
++
++         @gemfile_path ||= @gemfile_file.path
+       end
+    end
+ 
+    # tree
+-
+    def datatree
+       # TODO deep_merge
+       @datatree ||= super { { '.' => spec.files } }
+    end
+ 
+    def allfiles
+-      @allfiles =
++      @allfiles = (
+          spec.require_paths.map {|x| File.absolute_path?(x) && x || File.join(x, '**', '*') }.map {|x| Dir[x] }.flatten |
+          spec.executables.map {|x| Dir[File.join(spec.bindir, x)] }.flatten |
+          spec.files
++      )
+    end
+ 
+    def allfiles_for list_in
+diff --git a/lib/setup/source/gemfile.rb b/lib/setup/source/gemfile.rb
+index 1bbb9d4..4a296ef 100644
+--- a/lib/setup/source/gemfile.rb
++++ b/lib/setup/source/gemfile.rb
+@@ -11,10 +11,12 @@ class Setup::Source::Gemfile < Setup::Source::Base
+    end
+ 
+    def gemfile_path
+-      gemspec_file = Tempfile.create('Gemfile.')
+-      gemspec_file.puts(dsl.to_gemfile)
+-      gemspec_file.rewind
+-      gemspec_file.path
++      if @gemspec_file = Tempfile.create('Gemfile.')
++         @gemspec_file.puts(dsl.to_gemfile)
++         @gemspec_file.rewind
++      end
++
++      @gemspec_file.path
+    end
+ 
+    def dsl
