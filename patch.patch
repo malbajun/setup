@@ -1036,6 +1036,17 @@ index 9fcdbcf..14dbce4 100644
        end
     end
  end
+diff --git a/lib/setup/scheme.erb.yaml b/lib/setup/scheme.erb.yaml
+index 120011c..0d272a6 100644
+--- a/lib/setup/scheme.erb.yaml
++++ b/lib/setup/scheme.erb.yaml
+@@ -16,5 +16,5 @@
+     - context:
+          target_dir: <%= target.dldir %>
+          target_prefix: <%= File.expand_path(config.install_prefix) %>
+-         file: <%= File.join(File.dirname(file), 'gem.build_complete') %>
++         file: <%= 'gem.build_complete' %>
+       actor: touch
 diff --git a/lib/setup/session.rb b/lib/setup/session.rb
 index 4855df0..47b0650 100644
 --- a/lib/setup/session.rb
