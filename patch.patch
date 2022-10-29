@@ -515,7 +515,7 @@ index b1d26b2..9279f13 100644
        spec.files = IO.read('Manifest').split("\n")
        spec.extra_rdoc_files = spec.files.select { |f| DOC_FILTER =~ f }
 diff --git a/lib/setup/extcore/hoe.rb b/lib/setup/extcore/hoe.rb
-index f81887b..dbdc565 100644
+index f81887b..70120f9 100644
 --- a/lib/setup/extcore/hoe.rb
 +++ b/lib/setup/extcore/hoe.rb
 @@ -117,6 +117,10 @@ class Hoe
@@ -529,12 +529,17 @@ index f81887b..dbdc565 100644
        # spec
        def spec name = nil, &block
           main
-@@ -155,14 +159,32 @@ class Hoe
+@@ -155,14 +159,37 @@ class Hoe
           @spec.spec.executables = @spec.spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
           @spec.spec.bindir = 'bin'
  
 -         version = IO.read(history_file).split("\n").reduce(nil) { |res, x| res || /(===|##) (?<version>[^ ]+)/ =~ x && version }
-+         version = IO.read(history_file).split("\n").reduce(nil) { |res, x| res || /(=+|#+) v?(?<version>[^ ]+)/ =~ x && version }
++         version =
++            if history_file
++               IO.read(history_file).split("\n").reduce(nil) { |res, x| res || /(=+|#+) v?(?<version>[^ ]+)/ =~ x && version }
++            else
++               instance_eval(`grep VERSION . -r|sed s,.*:,,`.strip)
++            end
           @spec.spec.version = version
  
 -         description = IO.read(readme_file).split(/(===|##)/).reduce(nil) { |res, x| res || /^ Description(?<desc>.*)/m =~ x && desc }&.strip
