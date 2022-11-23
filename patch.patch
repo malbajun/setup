@@ -1409,7 +1409,7 @@ index 66bfa91..6e0e142 100644
  
     def ridir
 -      File.join(home, 'doc', source.fullname, 'ri')
-+      source.spec.ri_dir
++      source.spec.doc_dir('ri')
     end
  
     def specdir
