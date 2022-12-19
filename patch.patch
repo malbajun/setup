@@ -12,10 +12,10 @@ index 32cee11..537c235 100644
        end
  
 diff --git a/lib/setup/compiler.rb b/lib/setup/compiler.rb
-index 2254a90..5fee249 100644
+index 2254a90..d0e15a3 100644
 --- a/lib/setup/compiler.rb
 +++ b/lib/setup/compiler.rb
-@@ -1,26 +1,35 @@
+@@ -1,26 +1,37 @@
  require 'setup/base'
 +require 'setup/rake_app'
 +require 'setup/log'
@@ -25,6 +25,8 @@ index 2254a90..5fee249 100644
 -  #
     class Compiler < Base
 +      include Setup::Log
++
++      ARGS = %w(--use-system-libraries --enable-system-libraries --enable-debug-build --disable-static --enable-force-compile --srcdir=.)
 +
        class Extconf
 -         attr_reader :config, :original_config, :makeconfig, :original_makeconfig, :argv
@@ -42,13 +44,13 @@ index 2254a90..5fee249 100644
 -            require 'mkmf'
 -            RbConfig::CONFIG["srcdir"] = RbConfig::MAKEFILE_CONFIG["srcdir"] = '.'
 +            @source = source
- 
--            init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
++
 +            Dir.chdir(@extdir) do
 +               RbConfig::MAKEFILE_CONFIG["configure_args"] = args.join(" ")
 +               require 'mkmf'
 +               RbConfig::CONFIG["srcdir"] = RbConfig::MAKEFILE_CONFIG["srcdir"] = '.'
-+
+ 
+-            init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
 +               init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
 +            end
           end
@@ -61,7 +63,7 @@ index 2254a90..5fee249 100644
  
              @config = RbConfig::CONFIG.dup
              @makeconfig = RbConfig::MAKEFILE_CONFIG.dup
-@@ -40,9 +49,14 @@ module Setup
+@@ -40,9 +51,14 @@ module Setup
          project.valid_sources.map do |source|
            source.exttree.map do |dir_in, extfiles|
              extfiles.map do |extfile|
@@ -73,13 +75,13 @@ index 2254a90..5fee249 100644
 +              if extpath =~ /rakefile(.rb)?$/i
 +                 Setup::Rake.new(extpath, {source: source})
 +              else
-+                 cfg = Extconf.new(extpath, source, '--use-system-libraries', '--enable-debug-build', '--disable-static', '--srcdir=.')
++                 cfg = Extconf.new(extpath, source, *ARGS)
 +                 cfg.configure
 +                 cfg
                end
              end
            end
-@@ -53,30 +67,41 @@ module Setup
+@@ -53,30 +69,41 @@ module Setup
      def make
        chrpath_path = `which chrpath`.strip
  
@@ -144,7 +146,7 @@ index 2254a90..5fee249 100644
              end
            end
          end
-@@ -98,7 +123,7 @@ module Setup
+@@ -98,7 +125,7 @@ module Setup
  
      #
      def distclean
@@ -1390,7 +1392,7 @@ index 1bbb9d4..f7b06d2 100644
  
     def dsl
 diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
-index 66bfa91..6e0e142 100644
+index 66bfa91..8334120 100644
 --- a/lib/setup/target/gem.rb
 +++ b/lib/setup/target/gem.rb
 @@ -36,9 +36,7 @@ class Setup::Target::Gem
