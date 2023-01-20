@@ -193,7 +193,7 @@ index 18cca0e..1aaa823 100644
 +   end
  end
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
-index 6c26d86..8f3a593 100644
+index 6c26d86..3e14a06 100644
 --- a/lib/setup/configuration.rb
 +++ b/lib/setup/configuration.rb
 @@ -6,14 +6,13 @@ require 'shellwords'
@@ -212,6 +212,15 @@ index 6c26d86..8f3a593 100644
  
      # Ruby System Configuration
      RBCONFIG  = ::RbConfig::CONFIG
+@@ -225,7 +224,7 @@ module Setup
+     end
+ 
+     def current_alias= value
+-       aliases[current_source_name] = current_alias | (value.is_a?(Array) && value || value.split(/[:;]/)).map {|sub| sub.split(",") }
++       aliases[current_source_name] = current_alias | (value.is_a?(Array) && value || value.split(/[;:]/)).map {|sub| sub.split(/[,]/) }
+     end
+ 
+     def current_alias
 @@ -596,7 +595,7 @@ module Setup
      end
  
@@ -253,7 +262,7 @@ index dd3e47a..d6e78ef 100644
 +   end
 +end
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
-index 58eda25..f537633 100644
+index 58eda25..4bc2ba6 100644
 --- a/lib/setup/deps.rb
 +++ b/lib/setup/deps.rb
 @@ -17,8 +17,10 @@ class Setup::Deps
@@ -269,8 +278,14 @@ index 58eda25..f537633 100644
        }
     }
  
-@@ -68,7 +70,18 @@ class Setup::Deps
+@@ -66,23 +68,41 @@ class Setup::Deps
+       end.to_h
+    end
  
++   def prefix
++     'gem'
++   end
++
     ## deps
     def deps_gem_dsl dsl, set = 'lib'
 -      deps = set == 'bin' && dsl.runtime_deps(:gemfile) || dsl.runtime_deps(:gemspec)
@@ -289,21 +304,127 @@ index 58eda25..f537633 100644
        list = []
  
        deps.each do |dep|
-@@ -81,8 +94,12 @@ class Setup::Deps
-       ruby_version = dsl.required_ruby_version
-       rubygems_version = dsl.required_rubygems_version
+-         self.class.to_rpm(dep.requirement).map do |a, b|
+-            list << "gem(#{dep.name}) #{a} #{b}"
+-         end
++         list << (["#{prefix}(#{dep.name})"] | self.class.lower_to_rpm(dep.requirement)).join(" ")
+       end
+ 
+-      ruby = dsl.required_ruby
+-      ruby_version = dsl.required_ruby_version
+-      rubygems_version = dsl.required_rubygems_version
++      if /lib|bin/ =~ set
++         list |=
++            dsl.required_ruby_version.requirements.map do |(cond, ver)|
++               self.class.lower_to_rpm(Gem::Requirement.new("#{cond} #{ver}"))
++            end.reject {|x| x.blank? }.map do |req|
++               [dsl.required_ruby] | req
++            end.map {|x| x.join(" ") }
++         list << "rubygems #{dsl.required_rubygems_version}"
++      end
  
 -      list << self.class.to_rpm(ruby_version).map { |a, b| "#{ruby} #{a} #{b}" }
 -      list << "rubygems #{rubygems_version}"
-+      if /lib|bin/ =~ set
-+         list << self.class.to_rpm(ruby_version).map { |a, b| "#{ruby} #{a} #{b}" }
-+         list << "rubygems #{rubygems_version}"
-+      end
-+
 +      list
     end
  
     def deps_ruby_version
+@@ -92,11 +112,11 @@ class Setup::Deps
+    end
+ 
+    def deps_gem source
+-      [ "gem(#{source.name})", source.version ].compact.join(' = ')
++      ["gem(#{source.name})", source.version].compact.join(' = ')
+    end
+ 
+    def deps_gem_ext source
+-      %w(gem ruby-gem rubygem).map do |kind|
++      %w(gem).map do |kind|
+          "#{kind}(#{source.name}) = #{source.version}"
+       end
+    end
+@@ -168,20 +188,67 @@ class Setup::Deps
+    end
+ 
+    class << self
+-      def to_rpm req
+-         req.requirements.reduce({}) do |s, r|
+-            ver = Gem::Version.new("#{r[1]}".gsub(/x/, '0'))
+-
+-            tmp = case r[0]
+-                  when "~>"
+-                     {'>=' => ver.release, '<' => ver.bump}
+-                  when "!="
+-                     {'>' => ver.release}
+-                  else
+-                     {r[0] => ver}
+-                  end
+-
+-            s.merge(tmp)
++      def lower_to_rpm req
++         req.requirements.reduce([]) do |res, r|
++            merge(res, debound(r))
++         end
++      end
++
++      # TODO for requirement
++      # +debound+ crop upper limitation bound from the requirement rule
++      #
++      def debound req
++         ver = Gem::Version.new("#{req[1]}".gsub(/x/, '0'))
++
++         case req[0]
++         when "~>"
++            ['>=', ver.release]
++         when ">=", ">", "="
++            [req[0], ver.release]
++         when "!="
++            ['>', ver.release]
++         else
++            nil
++         end
++      end
++
++      # TODO for requirement
++      # +merge+ enstricts requirement
++      # >= 4 & >= 5 => >= 5
++      # > 5 ^ > 4 => > 5
++      #
++      # > 5 & >= 4 => > 5
++      # > 4 & >= 4 => > 4
++      # > 4 & >= 4.x => >= 4.x
++      #
++      # >= 4 & > 4 => > 4
++      # >= 4 & > 5 => > 5
++      # >= 5 & > 4 => >= 5
++      #
++      MERGE_CONDS = {
++         ">=" => {
++            code: -1,
++         }
++      }
++
++      def merge req1, req2
++         return req1 if req2.blank?
++         return req2 if req1.blank?
++
++         m = [req1[1], req2[1]].max
++
++         if req1[0] == req2[0]
++            [req1[0], m]
++         elsif req1[0] == ">="
++            req1[1] <= req2[1] ? [">", m] : [">=", m]
++         elsif req1[0] == ">"
++            req1[1] >= req2[1] ? [">", m] : [">=", m]
++         elsif %w(= < <=).include?(req1[0])
++            # unsupported
++            req2
++         else
++            # unsupported
++            req1
+          end
+       end
+    end
 diff --git a/lib/setup/documentor.rb b/lib/setup/documentor.rb
 index 864e26b..cd1cf5e 100644
 --- a/lib/setup/documentor.rb
@@ -353,7 +474,7 @@ index 864e26b..cd1cf5e 100644
        end
      end
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index 3d4eca3..9adb930 100755
+index 3d4eca3..939053b 100755
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
 @@ -28,7 +28,7 @@ class Setup::DSL
@@ -415,7 +536,7 @@ index 3d4eca3..9adb930 100755
              Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", nil
  
              dsl
-@@ -108,7 +123,13 @@ class Setup::DSL
+@@ -108,27 +123,43 @@ class Setup::DSL
     end
  
     def original_deps
@@ -429,8 +550,11 @@ index 3d4eca3..9adb930 100755
 +      end.compact
     end
  
++   # +gemspecs+ returns either self spec array for a gem DSL, or DSL's gemspec array for Gemfile
++   #
     def gemspecs
-@@ -116,19 +137,27 @@ class Setup::DSL
+-      dsl.gemspecs | [spec].compact
++      spec ? [spec] : dsl.gemspecs
     end
  
     def extracted_gemspec_deps
@@ -460,7 +584,7 @@ index 3d4eca3..9adb930 100755
     def defined_groups_for kinds_in = nil
        no_groups =
           [kinds_in].compact.flatten.map do |k|
-@@ -168,12 +197,14 @@ class Setup::DSL
+@@ -168,12 +199,14 @@ class Setup::DSL
  
     def to_ruby
        spec = self.spec.dup
@@ -477,7 +601,7 @@ index 3d4eca3..9adb930 100755
           reqs = deps.map do |dep|
              reqs = dep.requirement.requirements.map {|r| "'#{r[0]} #{r[1]}'" }.join(", ")
           end.join(", ")
-@@ -197,7 +228,7 @@ class Setup::DSL
+@@ -197,7 +230,7 @@ class Setup::DSL
     end
  
     def required_ruby_version
@@ -486,6 +610,21 @@ index 3d4eca3..9adb930 100755
     end
  
     def required_ruby
+diff --git a/lib/setup/extcore/bones.rb b/lib/setup/extcore/bones.rb
+index fbec2d0..fd179f8 100644
+--- a/lib/setup/extcore/bones.rb
++++ b/lib/setup/extcore/bones.rb
+@@ -85,6 +85,10 @@ module Bones
+       def use_gmail
+       end
+ 
++      def ensure_in_path *args
++         true
++      end
++
+       def depend_on name, version = nil, options = {}
+          if options[:development]
+             Bones.config.gem._spec.add_development_dependency name, version
 diff --git a/lib/setup/extcore/echoe.rb b/lib/setup/extcore/echoe.rb
 index b1d26b2..9279f13 100644
 --- a/lib/setup/extcore/echoe.rb
@@ -1122,7 +1261,7 @@ index 40bf0e7..0a5d7a7 100644
           KINDS.map do |const|
              self.const_get(const).search(dir, options)
 diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
-index 940dbbc..1cf6277 100644
+index 940dbbc..db7bb57 100644
 --- a/lib/setup/source/base.rb
 +++ b/lib/setup/source/base.rb
 @@ -4,7 +4,7 @@ require 'setup/log'
@@ -1143,15 +1282,21 @@ index 940dbbc..1cf6277 100644
     DATA_RE     = ->(s) do
           dirs = s.extdirs | s.libdirs | s.appdirs | s.exedirs |
              s.confdirs | s.testdirs | s.mandirs | s.supdirs |
-@@ -40,6 +40,7 @@ class Setup::Source::Base
+@@ -40,6 +40,13 @@ class Setup::Source::Base
  
     OPTIONS_IN = {
        aliases: ->(o, name) { o.is_a?(Hash) && [ o[nil], o[name], o.values.map {|x|x.flatten}.select {|x|x.include?(name)}.map {|x|x.first}.flatten ].flatten.compact.uniq || o },
-+      alias_names: ->(o, name) { o.is_a?(Hash) && [ o[nil], o[name], o.values.map {|x|x.flatten}.select {|x|x.include?(name)}.map {|x|x.first}.flatten ].flatten.compact.uniq || o },
++      alias_names: ->(o, name) do
++        (o.is_a?(Hash) ? [
++          o[nil]&.select {|g| g.grep(name).size > 0 },
++          o[name],
++          o.values.map {|x|x.flatten}.select {|x|x.include?(name)}.map {|x|x.first}.flatten
++        ].flatten.compact.uniq : (o.is_a?(Array) ? o : [o])) | [name&.gsub(/[_.]+/, '-')].compact
++      end,
        version_replaces: true,
        gem_version_replace: true,
        source_file: true,
-@@ -170,8 +171,8 @@ class Setup::Source::Base
+@@ -170,8 +177,8 @@ class Setup::Source::Base
        options[:gem_version_replace]
     end
  
@@ -1162,7 +1307,7 @@ index 940dbbc..1cf6277 100644
     end
  
     # dirs
-@@ -249,7 +250,7 @@ class Setup::Source::Base
+@@ -249,7 +256,7 @@ class Setup::Source::Base
     end
  
     def has_name? name
@@ -1171,7 +1316,7 @@ index 940dbbc..1cf6277 100644
     end
  
     def if_file file
-@@ -282,6 +283,14 @@ class Setup::Source::Base
+@@ -282,6 +289,14 @@ class Setup::Source::Base
        self
     end
  
@@ -1186,7 +1331,7 @@ index 940dbbc..1cf6277 100644
     protected
  
     def exedir
-@@ -300,14 +309,24 @@ class Setup::Source::Base
+@@ -300,14 +315,24 @@ class Setup::Source::Base
        end.flatten.compact.select { |file| if_dir(file) }
     end
  
@@ -1214,7 +1359,7 @@ index 940dbbc..1cf6277 100644
  
        if block_given?
           # TODO deep_merge
-@@ -315,7 +334,7 @@ class Setup::Source::Base
+@@ -315,7 +340,7 @@ class Setup::Source::Base
        end
  
        tree_in.map do |dir, files_in|
