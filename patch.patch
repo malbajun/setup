@@ -712,6 +712,39 @@ index f81887b..70120f9 100644
           self.constants.map {|c| self.const_get(c) }.select {|x| x.is_a?(Module) }.each {|x| extend(x) }
           if self.respond_to?("initialize_#{@spec.spec.name}")
              send("initialize_#{@spec.spec.name}")
+diff --git a/lib/setup/extcore/jeweler.rb b/lib/setup/extcore/jeweler.rb
+index 6caf17e..c9d650a 100644
+--- a/lib/setup/extcore/jeweler.rb
++++ b/lib/setup/extcore/jeweler.rb
+@@ -3,8 +3,6 @@
+ #
+ class Jeweler
+    class Tasks
+-      attr_reader :spec
+-
+       class Files
+          attr_reader :data
+ 
+@@ -31,6 +29,10 @@ class Jeweler
+          IO.read("VERSION")
+       end
+ 
++      def spec
++         @@spec
++      end
++
+       protected
+ 
+       def initialize
+@@ -38,7 +40,7 @@ class Jeweler
+ 
+          yield(self)
+ 
+-         @spec =
++         @@spec =
+             Gem::Specification.new do |g|
+                @data.each_pair do |name, value|
+                   if g.respond_to?("#{name}=")
 diff --git a/lib/setup/installer.rb b/lib/setup/installer.rb
 index ac124f1..26d1409 100644
 --- a/lib/setup/installer.rb
