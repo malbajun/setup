@@ -2,6 +2,54 @@ diff --git a/bin/setup.rb b/bin/setup-rb
 similarity index 100%
 rename from bin/setup.rb
 rename to bin/setup-rb
+diff --git a/lib/setup/actor.rb b/lib/setup/actor.rb
+index 13eaa26..729436f 100644
+--- a/lib/setup/actor.rb
++++ b/lib/setup/actor.rb
+@@ -25,7 +25,7 @@ module Setup::Actor
+                   # TODO cache it by match or index
+                   context_in = ERB.new(data['context'].to_yaml)
+                   c = yield(data['actor'], context_in)
+-                  c.merge('$' => actors[data['actor']])
++                  c.merge('$' => actors[data['actor']], "source_file" => file)
+                end
+             end
+          end.compact
+@@ -48,3 +48,4 @@ end
+ require 'setup/actor/link'
+ require 'setup/actor/touch'
+ require 'setup/actor/copy'
++require 'setup/actor/gen'
+diff --git a/lib/setup/actor/gen.rb b/lib/setup/actor/gen.rb
+new file mode 100644
+index 0000000..c6fb2d2
+--- /dev/null
++++ b/lib/setup/actor/gen.rb
+@@ -0,0 +1,24 @@
++module Setup::Actor::Gen
++   class NoDestinationDirError < StandardError ;end
++   class NoSourceDirError < StandardError ;end
++   class NoFileError < StandardError ;end
++
++   class << self
++      def allow c
++         return true if !c["if"]
++         instance_eval(c["if"]) if c["if"].is_a?(String)
++      end
++
++      def apply context
++         return unless allow(context)
++         target_dir = context['target_dir'] || raise(NoDestinationDirError)
++         file = context['file'] || raise(NoFileError)
++
++         target_file = File.join(context['target_prefix'] || '', target_dir, file)
++         FileUtils.mkdir_p(File.dirname(target_file))
++         x = context['body'] || ''
++         File.open(target_file, "w+") { |f| f.puts x }
++         $stdout.puts "  >> #{target_file}"
++      end
++   end
++end
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
 index 32cee11..537c235 100644
 --- a/lib/setup/command.rb
@@ -1283,10 +1331,15 @@ index 9fcdbcf..14dbce4 100644
     end
  end
 diff --git a/lib/setup/scheme.erb.yaml b/lib/setup/scheme.erb.yaml
-index 120011c..9dab9a2 100644
+index 120011c..5fd9273 100644
 --- a/lib/setup/scheme.erb.yaml
 +++ b/lib/setup/scheme.erb.yaml
-@@ -13,8 +13,10 @@
+@@ -9,12 +9,23 @@
+       actor: copy
+     - context:
+          source_dir: <%= target.dldir %>
+-         target_dir: <%= File.join(target.require_libdir) %>
++         target_dir: <%= File.join(target.require_fulllibdir) %>
           target_prefix: <%= File.expand_path(config.install_prefix) %>
           file: <%= file %>
        actor: link
@@ -1298,6 +1351,15 @@ index 120011c..9dab9a2 100644
 -         file: <%= File.join(File.dirname(file), 'gem.build_complete') %>
 +         file: <%= 'gem.build_complete' %>
        actor: touch
++ - match: rubygems_plugin\.(so|rb)
++   proc:
++    - context:
++         target_dir: <%= target.plugindir %>
++         target_prefix: <%= File.expand_path(config.install_prefix) %>
++         file: <%= "#{target.source.name}_plugin.rb" %>
++         body: "require_relative '../gems/<%= target.source.name %>-<%= target.source.version %>/<%= target.require_libdir %>/<%= file %>'"
++         if: "/^lib/.match?('<%= target.require_libdir %>')"
++      actor: gen
 diff --git a/lib/setup/session.rb b/lib/setup/session.rb
 index 4855df0..47b0650 100644
 --- a/lib/setup/session.rb
@@ -1651,7 +1713,7 @@ index 1bbb9d4..f7b06d2 100644
  
     def dsl
 diff --git a/lib/setup/target/gem.rb b/lib/setup/target/gem.rb
-index 66bfa91..ad896eb 100644
+index 66bfa91..84274f2 100644
 --- a/lib/setup/target/gem.rb
 +++ b/lib/setup/target/gem.rb
 @@ -18,7 +18,7 @@ class Setup::Target::Gem
@@ -1683,8 +1745,34 @@ index 66bfa91..ad896eb 100644
     end
  
     def specdir
+@@ -77,6 +75,10 @@ class Setup::Target::Gem
+       datadir
+    end
+ 
++   def plugindir
++      File.join(home, 'plugins')
++   end
++
+    # files
+ 
+    def exefiles
+@@ -100,6 +102,12 @@ class Setup::Target::Gem
+    end
+ 
+    def require_libdir
++      (source.spec.require_paths | [ '.' ]).select do |x|
++         x !~ /^\//
++      end.first
++   end
++
++   def require_fulllibdir
+       (source.spec.require_paths | [ '.' ]).select do |x|
+          x !~ /^\//
+       end.map do |x|
 diff --git a/lib/setup/target/site.rb b/lib/setup/target/site.rb
-index 92246d9..7701639 100644
+old mode 100644
+new mode 100755
+index 92246d9..588ab4a
 --- a/lib/setup/target/site.rb
 +++ b/lib/setup/target/site.rb
 @@ -28,7 +28,7 @@ class Setup::Target::Site
@@ -1696,3 +1784,19 @@ index 92246d9..7701639 100644
     end
  
     def ridir
+@@ -89,10 +89,14 @@ class Setup::Target::Site
+       libdir && libdir != logdir
+    end
+ 
+-   def require_libdir
++   def require_fulllibdir
+       File.join(libdir, source.name)
+    end
+ 
++   def require_libdir
++      File.join(File.dirname(libdir), source.name)
++   end
++
+    protected
+ 
+    def initialize source: raise, options: {}
