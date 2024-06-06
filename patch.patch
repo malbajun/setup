@@ -51,10 +51,18 @@ index 0000000..c6fb2d2
 +   end
 +end
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
-index 32cee11..537c235 100644
+index 32cee11..a22e627 100644
 --- a/lib/setup/command.rb
 +++ b/lib/setup/command.rb
-@@ -388,7 +388,7 @@ module Setup
+@@ -50,6 +50,7 @@ module Setup
+     task 'uninstall', "uninstall previously installed files"
+     task 'provides' , "show provides for all or specified sources"
+     task 'requires' , "show requires for all or specffied sources"
++    task 'predeps'  , "stores requires and provides for all sources"
+ 
+     # Run command.
+ 
+@@ -388,7 +389,7 @@ module Setup
           configuration.new_options.debug_io = str
        end
  
@@ -327,7 +335,7 @@ index dd3e47a..d6e78ef 100644
 +   end
 +end
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
-index 58eda25..4bc2ba6 100644
+index 58eda25..782dd07 100644
 --- a/lib/setup/deps.rb
 +++ b/lib/setup/deps.rb
 @@ -17,8 +17,10 @@ class Setup::Deps
@@ -343,29 +351,67 @@ index 58eda25..4bc2ba6 100644
        }
     }
  
-@@ -66,23 +68,41 @@ class Setup::Deps
+@@ -66,23 +68,78 @@ class Setup::Deps
        end.to_h
     end
  
++   def target_names target, set
++      targets.map do |target|
++         names_in = ([target.source.name] | target.source.alias_names).map {|n| [prefix, n.gsub(/[_\-\.]+/, '-')].join("-") }.uniq
++
++         names =
++         case set
++         when 'bin'
++            target.source.exefiles.map {|x|x.gsub(/[_\-\.]+/, '-')}
++         when 'lib'
++            names_in
++         when 'devel'
++            names_in.map {|n| "#{n}-devel" }
++         when 'doc'
++            names_in.map {|n| "#{n}-doc" }
++         end
++      end.flatten.compact
++   end
++
++   def target_req_list
++      targets.reduce({}) do |res, target|
++         target_reqs(target).reduce(res) do |res, (set, reqs)|
++            res.merge(target_names(target, set) => reqs)
++         end
++      end
++   end
++
++   def target_prov_list
++      targets.reduce({}) do |res, target|
++         target_provs(target).reduce(res) do |res, (set, reqs)|
++            res.merge(target_names(target, set) => reqs)
++         end
++      end
++   end
++
 +   def prefix
 +     'gem'
 +   end
 +
     ## deps
-    def deps_gem_dsl dsl, set = 'lib'
+-   def deps_gem_dsl dsl, set = 'lib'
 -      deps = set == 'bin' && dsl.runtime_deps(:gemfile) || dsl.runtime_deps(:gemspec)
-+      deps =
-+         case set
-+         when 'bin'
-+            # TODO remove gemspec deps in favor of gemfile
-+            # dsl.runtime_deps(:gemfile)
-+            dsl.runtime_deps(:gemspec)
-+         when 'devel'
-+            dsl.development_deps(:gemspec)
-+         else
-+            dsl.runtime_deps(:gemspec)
-+         end
++   def deps_gem_dsl source, set = 'lib'
++      case set
++      when 'bin'
++         # TODO remove gemspec deps in favor of gemfile
++         # dsl.runtime_deps(:gemfile)
++         source.dsl.runtime_deps(:gemspec) | [source.dep]
++      when 'devel'
++         source.dsl.development_deps(:gemspec) | [source.dep]
++      when 'doc'
++         [source.dep]
++      else
++         source.dsl.runtime_deps(:gemspec)
++      end
++   end
 +
++   def render_deps_gem_dsl deps, dsl, set = 'lib'
        list = []
  
        deps.each do |dep|
@@ -394,7 +440,7 @@ index 58eda25..4bc2ba6 100644
     end
  
     def deps_ruby_version
-@@ -92,11 +112,11 @@ class Setup::Deps
+@@ -92,11 +149,11 @@ class Setup::Deps
     end
  
     def deps_gem source
@@ -408,7 +454,28 @@ index 58eda25..4bc2ba6 100644
           "#{kind}(#{source.name}) = #{source.version}"
        end
     end
-@@ -168,20 +188,67 @@ class Setup::Deps
+@@ -105,10 +162,18 @@ class Setup::Deps
+       root = project.config.dep_sources[set]
+       name = (root[source.name] || root[nil]).first
+       if name == 'auto'
+-         kind == :dsl && deps_gem_dsl(source.dsl, set) || deps_gem(source)
++         if kind == :dsl
++            deps = deps_gem_dsl(source, set)
++
++            render_deps_gem_dsl(deps, source.dsl, set)
++         else
++            deps_gem(source)
++         end
+       else
+          project.select_source(name).map do |source|
+-            deps_gem_dsl(source.dsl)
++            deps = deps_gem_dsl(source)
++
++            render_deps_gem_dsl(deps, source.dsl)
+          end
+       end
+    end
+@@ -168,20 +233,67 @@ class Setup::Deps
     end
  
     class << self
@@ -490,6 +557,11 @@ index 58eda25..4bc2ba6 100644
           end
        end
     end
+@@ -193,3 +305,4 @@ class Setup::Deps
+       @options = options
+    end
+ end
++require 'setup'
 diff --git a/lib/setup/documentor.rb b/lib/setup/documentor.rb
 index 864e26b..cd1cf5e 100644
 --- a/lib/setup/documentor.rb
@@ -1361,10 +1433,18 @@ index 120011c..5fd9273 100644
 +         if: "/^lib/.match?('<%= target.require_libdir %>')"
 +      actor: gen
 diff --git a/lib/setup/session.rb b/lib/setup/session.rb
-index 4855df0..47b0650 100644
+index 4855df0..752ad59 100644
 --- a/lib/setup/session.rb
 +++ b/lib/setup/session.rb
-@@ -161,13 +161,11 @@ module Setup
+@@ -122,6 +122,7 @@ module Setup
+       config
+       make
+       document
++      predeps
+     end
+ 
+     #
+@@ -161,13 +162,11 @@ module Setup
            $stdout = $stderr
  
            configuration.pre&.map do |task_name|
@@ -1380,8 +1460,28 @@ index 4855df0..47b0650 100644
            end
          ensure
            $stderr = $stdout
-@@ -259,20 +257,29 @@ module Setup
+@@ -257,22 +256,49 @@ module Setup
+       end
+     end
  
++    def predeps
++      io.puts("Generating predeps:") unless quiet?
++
++      FileUtils.mkdir_p("/var/tmp/reqs")
++      depper.target_req_list.each do |names, deps|
++         names.each do |name|
++            File.open(File.join("/var/tmp/reqs", name), "w+") { |f| f.puts(deps) }
++         end
++      end
++
++      FileUtils.mkdir_p("/var/tmp/provs")
++      depper.target_prov_list.each do |names, deps|
++         names.each do |name|
++            File.open(File.join("/var/tmp/provs", name), "w+") { |f| f.puts(deps) }
++         end
++      end
++    end
++
      # #  C O N T R O L L E R S / M O D E L S  # #
  
 -    def project_options
@@ -1536,7 +1636,7 @@ index 940dbbc..db7bb57 100644
                 re =~ file && File.file?(file) && (!prc || prc[self, file, dir])
              end
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
-index c332f3c..e841e63 100644
+index c332f3c..86f2305 100644
 --- a/lib/setup/source/gem.rb
 +++ b/lib/setup/source/gem.rb
 @@ -13,7 +13,7 @@ require 'setup/loader/git-version-gen'
@@ -1588,6 +1688,15 @@ index c332f3c..e841e63 100644
           gem_append_list: [ self.dep ])
     end
  
+@@ -141,7 +139,7 @@ class Setup::Source::Gem < Setup::Source::Base
+    end
+ 
+    def dep
+-      Bundler::Dependency.new(name, Gem::Requirement.new(["~> #{version}"]), options: { type: :runtime })
++      Bundler::Dependency.new(name, Gem::Requirement.new(["= #{version}"]), options: { type: :runtime })
+    end
+ 
+    def fullname
 @@ -160,33 +158,37 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
