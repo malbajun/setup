@@ -611,7 +611,7 @@ index 864e26b..cd1cf5e 100644
        end
      end
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index 3d4eca3..953cfe5 100755
+index 3d4eca3..cf4bd4d 100755
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
 @@ -28,7 +28,7 @@ class Setup::DSL
@@ -654,15 +654,16 @@ index 3d4eca3..953cfe5 100755
     end
  
     def dsl
-@@ -63,6 +77,7 @@ class Setup::DSL
+@@ -63,16 +77,16 @@ class Setup::DSL
                    dsl
                 end
           rescue LoadError,
 +                TypeError,
                  Bundler::GemNotFound,
                  Bundler::GemfileNotFound,
-                 Bundler::VersionConflict,
-@@ -71,8 +86,8 @@ class Setup::DSL
+-                Bundler::VersionConflict,
+                 Bundler::Dsl::DSLError,
+                 Errno::ENOENT,
                  ::Gem::InvalidSpecificationException => e
  
              dsl = Bundler::Dsl.new
@@ -673,7 +674,7 @@ index 3d4eca3..953cfe5 100755
              Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", nil
  
              dsl
-@@ -108,27 +123,43 @@ class Setup::DSL
+@@ -108,27 +122,43 @@ class Setup::DSL
     end
  
     def original_deps
@@ -721,7 +722,7 @@ index 3d4eca3..953cfe5 100755
     def defined_groups_for kinds_in = nil
        no_groups =
           [kinds_in].compact.flatten.map do |k|
-@@ -168,12 +199,14 @@ class Setup::DSL
+@@ -168,12 +198,14 @@ class Setup::DSL
  
     def to_ruby
        spec = self.spec.dup
@@ -738,7 +739,7 @@ index 3d4eca3..953cfe5 100755
           reqs = deps.map do |dep|
              reqs = dep.requirement.requirements.map {|r| "'#{r[0]} #{r[1]}'" }.join(", ")
           end.join(", ")
-@@ -197,7 +230,7 @@ class Setup::DSL
+@@ -197,7 +229,7 @@ class Setup::DSL
     end
  
     def required_ruby_version
@@ -931,7 +932,7 @@ index ac124f1..26d1409 100644
                    tmp.rewind
                    novel_install_files([ tmp.path ], File.join(target.mandir, File.dirname(file)), options.merge(mode: 0644, as: file.gsub('.ronn', '')))
 diff --git a/lib/setup/loader.rb b/lib/setup/loader.rb
-index 965b621..f914a94 100644
+index 965b621..2a1806a 100644
 --- a/lib/setup/loader.rb
 +++ b/lib/setup/loader.rb
 @@ -12,6 +12,14 @@ module Setup::Loader
@@ -961,26 +962,41 @@ index 965b621..f914a94 100644
              end.to_h
           end
  
-@@ -55,12 +65,17 @@ module Setup::Loader
+@@ -45,9 +55,10 @@ module Setup::Loader
+          begin
+             push
+             Dir.chdir(File.dirname(file)) do
+-               _file = File.basename(file).untaint
++               _file = File.basename(file)
++               _file.untaint if _file.respond_to?(:untaint)
+                code = File.read(file, mode: 'r:UTF-8:-')
+-               code.untaint
++               code.untaint if code.respond_to?(:untaint)
+ 
+                value =
+                   begin
+@@ -55,12 +66,19 @@ module Setup::Loader
                       # the instance_eval is used in favor of eval to avoid lost predefined vars
                       # like for chef-utils gem
                       instance_eval(code, _file)
 -                  rescue Exception
 +                  rescue Exception => e
                       # thrown for setup gem
-+                     STDERR.puts("###### #{e.class}: #{e.message}")
++                     STDERR.puts("Setup::Loader.load_file.chdir > #{e.class}: #{e.message}")
 +                     # store hash
 +                     store_object_hash(type_hash)
                       load(File.basename(file), true)
                    end
              end
           rescue Exception => e
++            STDERR.puts("Setup::Loader.load_file > #{e.class}: #{e.message}")
++
 +            store_object_hash(type_hash)
 +
              raise e
           ensure
              debug("value: #{value.inspect}")
-@@ -82,7 +97,9 @@ module Setup::Loader
+@@ -82,7 +100,9 @@ module Setup::Loader
  
        def pop
           debug("Subtract paths: " + ($: - @paths).join("\n\t"))
@@ -991,7 +1007,7 @@ index 965b621..f914a94 100644
           debug("Replaced paths with: " + $:.join("\n\t"))
        end
     end
-@@ -109,6 +126,19 @@ module Setup::Loader
+@@ -109,6 +129,19 @@ module Setup::Loader
           end.select {|(_, type)| type }.to_h
     end
  
@@ -1011,7 +1027,7 @@ index 965b621..f914a94 100644
     def mods
        @@mods ||= {}
     end
-@@ -117,7 +147,14 @@ module Setup::Loader
+@@ -117,7 +150,14 @@ module Setup::Loader
        debug("Loading file: #{file}")
        stdout = $stdout
        stderr = $stderr
@@ -1027,7 +1043,7 @@ index 965b621..f914a94 100644
  
        module_name = "M" + Random.srand.to_s
        mod_code = <<-END
-@@ -139,6 +176,8 @@ module Setup::Loader
+@@ -139,6 +179,8 @@ module Setup::Loader
  
        OpenStruct.new(mod: mod, object_hash: {}, log: log, errlog: errlog, diff_ids: [])
     ensure

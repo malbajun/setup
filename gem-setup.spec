@@ -3,7 +3,7 @@
 
 Name:          gem-%pkgname
 Version:       5.999.6
-Release:       alt11
+Release:       alt12
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
 License:       BSD-2-Clause
@@ -95,6 +95,9 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
+* Wed Jul 24 2024 Pavel Skrylev <majioa@altlinux.org> 5.999.6-alt12
+- ! some updates
+
 * Thu Jun 06 2024 Pavel Skrylev <majioa@altlinux.org> 5.999.6-alt11
 - + added support for predeps generator
 
