@@ -563,7 +563,7 @@ index 58eda25..782dd07 100644
  end
 +require 'setup'
 diff --git a/lib/setup/documentor.rb b/lib/setup/documentor.rb
-index 864e26b..cd1cf5e 100644
+index 864e26b..3aba39c 100644
 --- a/lib/setup/documentor.rb
 +++ b/lib/setup/documentor.rb
 @@ -1,5 +1,7 @@
@@ -574,7 +574,7 @@ index 864e26b..cd1cf5e 100644
  
  module Setup
  
-@@ -33,7 +35,7 @@ module Setup
+@@ -33,18 +35,20 @@ module Setup
      # @todo Should we run rdoc programmatically instead of shelling out?
      #
      def exec_ri
@@ -583,8 +583,33 @@ index 864e26b..cd1cf5e 100644
          options = if source.is_a?(Setup::Source::Gem)
            ["--ri"]
          else
-@@ -57,7 +59,7 @@ module Setup
-         ::RDoc::RDoc.new.document(opts.dup << file)
+           ["--ri-site"]
+-        end + ['-q', '-o', source.default_ridir]
++        end + ['-q', '--force-update', '-o', source.default_ridir]
++        @options = RDoc::Options.load_options
++        @options.parse(options)
+ 
+         Dir.chdir(source.root) do
+           source.docsrctree.each do |dir, files|
+-            if dir == '.' || !documentate(options, dir)
++            if dir == '.' || !documentate(dir)
+               Dir.chdir(dir) do
+-                files.each { |file| documentate(options, file) }
++                files.each { |file| documentate(file) }
+               end
+             end
+           end
+@@ -52,12 +56,14 @@ module Setup
+       end
+     end
+ 
+-    def documentate opts, file
++    def documentate file
+       begin
+-        ::RDoc::RDoc.new.document(opts.dup << file)
++        rdoc = ::RDoc::RDoc.new
++        @options.files = File.directory?(file) ? Dir["#{file}/**/*"] : file
++        rdoc.document(@options)
  
          true
 -      rescue StandardError => e
@@ -592,7 +617,7 @@ index 864e26b..cd1cf5e 100644
          $stderr.puts "ri generation to documentate '#{file}' is failed" unless quiet?
          $stderr.puts "#{e.class}: #{e.message}\n\t#{e.backtrace.join("\n\t")}"
        end
-@@ -66,7 +68,7 @@ module Setup
+@@ -66,7 +72,7 @@ module Setup
      #
      #
      def dirs
@@ -601,7 +626,7 @@ index 864e26b..cd1cf5e 100644
      end
  
      #
-@@ -137,7 +139,7 @@ module Setup
+@@ -137,7 +143,7 @@ module Setup
  
  
      def distclean
@@ -1652,7 +1677,7 @@ index 940dbbc..db7bb57 100644
                 re =~ file && File.file?(file) && (!prc || prc[self, file, dir])
              end
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
-index c332f3c..86f2305 100644
+index c332f3c..16d5473 100644
 --- a/lib/setup/source/gem.rb
 +++ b/lib/setup/source/gem.rb
 @@ -13,7 +13,7 @@ require 'setup/loader/git-version-gen'
@@ -1692,7 +1717,17 @@ index c332f3c..86f2305 100644
  
                 res.merge({ f => gemspecs })
              else
-@@ -130,9 +128,9 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -121,7 +119,8 @@ class Setup::Source::Gem < Setup::Source::Base
+       end
+ 
+       def new_if_valid spec, options_in = {}
+-         if spec && spec.version && spec.platform == 'ruby' && spec.name !~ /\u0000/
++         if spec && spec.version && (spec.platform == 'ruby' ||
++              spec.platform.cpu == RbConfig::CONFIG["target_cpu"]) && spec.name !~ /\u0000/
+                # !($:&spec.full_require_paths).any? && !spec.full_require_paths.all? {|p| File.directory?(p) }
+             self.new(source_options({ spec: spec }.merge(options_in)))
+          end
+@@ -130,9 +129,9 @@ class Setup::Source::Gem < Setup::Source::Base
  
     def gemfile
        @gemfile ||= Setup::Source::Gemfile.new(
@@ -1704,7 +1739,7 @@ index c332f3c..86f2305 100644
           gem_append_list: [ self.dep ])
     end
  
-@@ -141,7 +139,7 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -141,7 +140,7 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
     def dep
@@ -1713,7 +1748,7 @@ index c332f3c..86f2305 100644
     end
  
     def fullname
-@@ -160,33 +158,37 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -160,33 +159,37 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
     def gemspec_path
@@ -1761,7 +1796,7 @@ index c332f3c..86f2305 100644
     end
  
     def allfiles_for list_in
-@@ -195,8 +197,22 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -195,8 +198,22 @@ class Setup::Source::Gem < Setup::Source::Base
        end.to_h
     end
  
@@ -1785,7 +1820,7 @@ index c332f3c..86f2305 100644
     end
  
     def testtree
-@@ -255,8 +271,18 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -255,8 +272,18 @@ class Setup::Source::Gem < Setup::Source::Base
           paths.any? && paths || ['lib'])
     end
  
@@ -1805,7 +1840,7 @@ index c332f3c..86f2305 100644
     end
  
     def rake
-@@ -271,8 +297,8 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -271,8 +298,8 @@ class Setup::Source::Gem < Setup::Source::Base
  
     def detect_root
        if spec
