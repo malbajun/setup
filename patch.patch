@@ -636,7 +636,7 @@ index 864e26b..3aba39c 100644
        end
      end
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index 3d4eca3..cf4bd4d 100755
+index 3d4eca3..54674e6 100755
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
 @@ -28,7 +28,7 @@ class Setup::DSL
@@ -662,7 +662,8 @@ index 3d4eca3..cf4bd4d 100755
 +         Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", @fake_gemfile_path
 +         @fake_gemfile.close
 +      end
-+
+ 
+-      @fake_gemfile
 +      @fake_gemfile_path
 +   end
 +
@@ -673,8 +674,7 @@ index 3d4eca3..cf4bd4d 100755
 +         Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", @fake_gemlock_path
 +         @fake_gemlock.close
 +      end
- 
--      @fake_gemfile
++
 +      @fake_gemlock_path
     end
  
@@ -764,12 +764,15 @@ index 3d4eca3..cf4bd4d 100755
           reqs = deps.map do |dep|
              reqs = dep.requirement.requirements.map {|r| "'#{r[0]} #{r[1]}'" }.join(", ")
           end.join(", ")
-@@ -197,7 +229,7 @@ class Setup::DSL
+@@ -197,7 +229,10 @@ class Setup::DSL
     end
  
     def required_ruby_version
 -      @required_ruby_version ||= Gem::Requirement.new(dsl.instance_variable_get(:@ruby_version)&.engine_versions) || ">= 0"
-+      @required_ruby_version ||= Gem::Requirement.new(">= #{dsl.instance_variable_get(:@ruby_version)&.engine_versions&.first || 0}")
++      (f, s) = (dsl.instance_variable_get(:@ruby_version)&.engine_versions&.first || "0").split(/\s+/)
++      cv = [ s ? f : ">=", s || f].join(" ")
++
++      @required_ruby_version ||= Gem::Requirement.new(cv)
     end
  
     def required_ruby
