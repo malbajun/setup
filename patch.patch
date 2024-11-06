@@ -72,10 +72,10 @@ index 32cee11..a22e627 100644
        end
  
 diff --git a/lib/setup/compiler.rb b/lib/setup/compiler.rb
-index 2254a90..2baf3d6 100644
+index 2254a90..40680fd 100644
 --- a/lib/setup/compiler.rb
 +++ b/lib/setup/compiler.rb
-@@ -1,26 +1,37 @@
+@@ -1,32 +1,50 @@
  require 'setup/base'
 +require 'setup/rake_app'
 +require 'setup/log'
@@ -109,9 +109,13 @@ index 2254a90..2baf3d6 100644
 +               RbConfig::MAKEFILE_CONFIG["configure_args"] = args.join(" ")
 +               require 'mkmf'
 +               RbConfig::CONFIG["srcdir"] = RbConfig::MAKEFILE_CONFIG["srcdir"] = '.'
++
++               config = RbConfig::MAKEFILE_CONFIG.dup.merge({"CFLAGS" => RbConfig::MAKEFILE_CONFIG["CFLAGS"] + " -fpermissive " +
++                  "-Wdeclaration-missing-parameter-type -Wimplicit-function-declaration -Wimplicit-int " +
++                  "-Wincompatible-pointer-types -Wint-conversion -Wreturn-mismatch"})
  
 -            init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
-+               init_mkmf(RbConfig::MAKEFILE_CONFIG, RbConfig::CONFIG)
++               init_mkmf(config, RbConfig::CONFIG)
 +            end
           end
  
@@ -123,7 +127,18 @@ index 2254a90..2baf3d6 100644
  
              @config = RbConfig::CONFIG.dup
              @makeconfig = RbConfig::MAKEFILE_CONFIG.dup
-@@ -40,9 +51,14 @@ module Setup
+-         rescue SystemExit
+          rescue Exception => e
+-            $stderr.puts("[#{e.class}]> #{e.message}\t\n#{e.backtrace.join("\t\n")}")
++            unless e.is_a?(SystemExit) && e.status == 0
++               $stderr.puts("[#{e.class}]> #{e.message}\t\n#{e.backtrace.join("\t\n")}")
++
++               raise(e)
++            end
+          ensure
+             RbConfig::CONFIG.replace(@original_config)
+             RbConfig::MAKEFILE_CONFIG.replace(@original_makeconfig)
+@@ -40,9 +58,14 @@ module Setup
          project.valid_sources.map do |source|
            source.exttree.map do |dir_in, extfiles|
              extfiles.map do |extfile|
@@ -141,7 +156,7 @@ index 2254a90..2baf3d6 100644
                end
              end
            end
-@@ -53,30 +69,38 @@ module Setup
+@@ -53,30 +76,38 @@ module Setup
      def make
        chrpath_path = `which chrpath`.strip
  
@@ -203,7 +218,7 @@ index 2254a90..2baf3d6 100644
              end
            end
          end
-@@ -98,7 +122,7 @@ module Setup
+@@ -98,7 +129,7 @@ module Setup
  
      #
      def distclean
@@ -212,7 +227,7 @@ index 2254a90..2baf3d6 100644
          source.exttree.each do |dir_in, extfiles|
            extfiles.each do |extfile|
              Dir.chdir(File.join(source.root, dir_in, File.dirname(extfile))) do
-@@ -123,9 +147,12 @@ module Setup
+@@ -123,9 +154,12 @@ module Setup
      end
  
      def target_prefix
