@@ -350,7 +350,7 @@ index dd3e47a..d6e78ef 100644
 +   end
 +end
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
-index 58eda25..782dd07 100644
+index 58eda25..6e30354 100644
 --- a/lib/setup/deps.rb
 +++ b/lib/setup/deps.rb
 @@ -17,8 +17,10 @@ class Setup::Deps
@@ -490,6 +490,19 @@ index 58eda25..782dd07 100644
           end
        end
     end
+@@ -127,10 +192,10 @@ class Setup::Deps
+          if match = /#!\s*(?<exec>\S+)/.match(line)
+             match[:exec]
+          else
+-            $stderr.puts "Invalid shebang line '#{line}'"
++            $stderr.puts "Invalid shebang line '#{line[0..20]}'"
+             nil
+          end
+-      end.uniq
++      end.compact.uniq
+    end
+ 
+    def deps_execs target
 @@ -168,20 +233,67 @@ class Setup::Deps
     end
  
