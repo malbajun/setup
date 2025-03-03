@@ -664,10 +664,21 @@ index 864e26b..3aba39c 100644
        end
      end
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index 3d4eca3..54674e6 100755
+index 3d4eca3..acd14f5 100755
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
-@@ -28,7 +28,7 @@ class Setup::DSL
+@@ -16,6 +16,10 @@ class Setup::DSL
+       true => :runtime,
+    }
+ 
++   DSL_CONT_EXCEPTIONS = %w(LoadError SyntaxError TypeError Bundler::GemNotFound Bundler::VersionConflict
++      Bundler::GemfileNotFound Bundler::Dsl::DSLError Bundler::GemspecError
++      Errno::ENOENT Gem::InvalidSpecificationException)
++
+    # attributes
+    attr_reader :source_file, :replace_list, :skip_list, :append_list, :spec
+ 
+@@ -28,7 +32,7 @@ class Setup::DSL
     end
  
     def gemfile
@@ -676,7 +687,7 @@ index 3d4eca3..54674e6 100755
     end
  
     def original_gemfile
-@@ -45,12 +45,26 @@ class Setup::DSL
+@@ -45,38 +49,54 @@ class Setup::DSL
        gemfile && Pathname.new(gemfile) || nil
     end
  
@@ -693,41 +704,70 @@ index 3d4eca3..54674e6 100755
  
 -      @fake_gemfile
 +      @fake_gemfile_path
-+   end
-+
+    end
+ 
+-   def dsl
+-      @dsl ||= (
+-         begin
+-            dsl =
+-               Dir.chdir(File.dirname(source_file)) do
+-                  dsl = Bundler::Dsl.new
+-                  dsl.eval_gemfile(original_gemfile)
+-                  dsl
+-               end
+-         rescue LoadError,
+-                Bundler::GemNotFound,
+-                Bundler::GemfileNotFound,
+-                Bundler::VersionConflict,
+-                Bundler::Dsl::DSLError,
+-                Errno::ENOENT,
+-                ::Gem::InvalidSpecificationException => e
 +   def fake_gemlock_path
 +      if !@fake_gemlock && @fake_gemlock ||= Tempfile.create('Gemfile.lock')
 +         @fake_gemlock_path = @fake_gemlock.path
-+
+ 
+-            dsl = Bundler::Dsl.new
+-            dsl.instance_variable_set(:@gemfiles, [Pathname.new(fake_gemfile)])
+-            dsl.to_definition(Tempfile.create('Gemfile.lock').path, {})
+-            Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", nil
 +         Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", @fake_gemlock_path
 +         @fake_gemlock.close
 +      end
-+
+ 
 +      @fake_gemlock_path
++   end
++
++   def default_dsl
++      dsl = Bundler::Dsl.new
++      dsl.instance_variable_set(:@gemfiles, [Pathname.new(fake_gemfile_path)])
++      dsl.to_definition(fake_gemlock_path, {})
++      Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", nil
++
++      dsl
++   end
++
++   def source_file_dsl
++      dsl =
++         Dir.chdir(File.dirname(source_file)) do
++            dsl = Bundler::Dsl.new
++            dsl.eval_gemfile(original_gemfile)
+             dsl
+-         end)
++         end
++   rescue Exception => e
++      unless DSL_CONT_EXCEPTIONS.find {|ec| ec == e.class.to_s }
++         debug("dsl error: #{e.class} #{e.message}")
++
++         raise e
++      end
++   end
++
++   def dsl
++      @dsl ||= source_file_dsl || default_dsl
     end
  
-    def dsl
-@@ -63,16 +77,16 @@ class Setup::DSL
-                   dsl
-                end
-          rescue LoadError,
-+                TypeError,
-                 Bundler::GemNotFound,
-                 Bundler::GemfileNotFound,
--                Bundler::VersionConflict,
-                 Bundler::Dsl::DSLError,
-                 Errno::ENOENT,
-                 ::Gem::InvalidSpecificationException => e
- 
-             dsl = Bundler::Dsl.new
--            dsl.instance_variable_set(:@gemfiles, [Pathname.new(fake_gemfile)])
--            dsl.to_definition(Tempfile.create('Gemfile.lock').path, {})
-+            dsl.instance_variable_set(:@gemfiles, [Pathname.new(fake_gemfile_path)])
-+            dsl.to_definition(fake_gemlock_path, {})
-             Bundler::SharedHelpers.set_env "BUNDLE_GEMFILE", nil
- 
-             dsl
-@@ -108,27 +122,43 @@ class Setup::DSL
+    def edsl
+@@ -108,27 +128,43 @@ class Setup::DSL
     end
  
     def original_deps
@@ -775,7 +815,7 @@ index 3d4eca3..54674e6 100755
     def defined_groups_for kinds_in = nil
        no_groups =
           [kinds_in].compact.flatten.map do |k|
-@@ -168,12 +198,14 @@ class Setup::DSL
+@@ -168,12 +204,14 @@ class Setup::DSL
  
     def to_ruby
        spec = self.spec.dup
@@ -792,7 +832,7 @@ index 3d4eca3..54674e6 100755
           reqs = deps.map do |dep|
              reqs = dep.requirement.requirements.map {|r| "'#{r[0]} #{r[1]}'" }.join(", ")
           end.join(", ")
-@@ -197,7 +229,10 @@ class Setup::DSL
+@@ -197,7 +235,10 @@ class Setup::DSL
     end
  
     def required_ruby_version
