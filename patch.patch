@@ -1545,7 +1545,7 @@ index 120011c..5fd9273 100644
 +         if: "/^lib/.match?('<%= target.require_libdir %>')"
 +      actor: gen
 diff --git a/lib/setup/session.rb b/lib/setup/session.rb
-index 4855df0..752ad59 100644
+index 4855df0..197d88c 100644
 --- a/lib/setup/session.rb
 +++ b/lib/setup/session.rb
 @@ -122,6 +122,7 @@ module Setup
@@ -1562,8 +1562,9 @@ index 4855df0..752ad59 100644
            configuration.pre&.map do |task_name|
 -            project.stat_source_tree.each do |(_path, stated_sources)|
 -              stated_sources.each do |(source, status)|
+-                if status == :valid && source.respond_to?(:rake) and source.rake.present?
 +             project.stat_sources.each do |(source, status)|
-                 if status == :valid && source.respond_to?(:rake) and source.rake.present?
++                if status == :valid && source.respond_to?(:rake) and !source.rake.blank?
                    source.rake.run_task(task_name)
                  end
 -              end
@@ -1748,7 +1749,7 @@ index 940dbbc..db7bb57 100644
                 re =~ file && File.file?(file) && (!prc || prc[self, file, dir])
              end
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
-index c332f3c..16d5473 100644
+index c332f3c..83f8ca3 100644
 --- a/lib/setup/source/gem.rb
 +++ b/lib/setup/source/gem.rb
 @@ -13,7 +13,7 @@ require 'setup/loader/git-version-gen'
@@ -1891,7 +1892,7 @@ index c332f3c..16d5473 100644
     end
  
     def testtree
-@@ -255,8 +272,18 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -255,12 +272,25 @@ class Setup::Source::Gem < Setup::Source::Base
           paths.any? && paths || ['lib'])
     end
  
@@ -1911,7 +1912,15 @@ index c332f3c..16d5473 100644
     end
  
     def rake
-@@ -271,8 +298,8 @@ class Setup::Source::Gem < Setup::Source::Base
+-      @rake ||= Setup::Rake.new(File.join(root, Dir["{#{Rake::Application::DEFAULT_RAKEFILES.join(",")}}"].first))
++      return @rake if @rake
++
++      files = Dir["{#{Rake::Application::DEFAULT_RAKEFILES.join(",")}}"]
++      @rake ||= Setup::Rake.new(File.join(root, files.first)) unless files.blank?
+    end
+ 
+    def gemspec
+@@ -271,8 +301,8 @@ class Setup::Source::Gem < Setup::Source::Base
  
     def detect_root
        if spec
