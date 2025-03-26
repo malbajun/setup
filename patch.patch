@@ -1670,7 +1670,7 @@ index 40bf0e7..0a5d7a7 100644
           KINDS.map do |const|
              self.const_get(const).search(dir, options)
 diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
-index 940dbbc..db7bb57 100644
+index 940dbbc..9e4f517 100644
 --- a/lib/setup/source/base.rb
 +++ b/lib/setup/source/base.rb
 @@ -4,7 +4,7 @@ require 'setup/log'
@@ -1682,7 +1682,7 @@ index 940dbbc..db7bb57 100644
  
     DL_DIRS     = ->(s) { ".so.#{s.name}#{RbConfig::CONFIG['sitearchdir']}" }
     RI_DIRS     = ->(s) { [ s.default_ridir, 'ri' ] }
-@@ -26,7 +26,7 @@ class Setup::Source::Base
+@@ -26,13 +26,13 @@ class Setup::Source::Base
     RI_RE       = /\.ri$/
     INC_RE      = /\.(h|hpp)$/
     MAN_RE      = /\.[1-8](.ronn)?$/
@@ -1691,6 +1691,13 @@ index 940dbbc..db7bb57 100644
     DATA_RE     = ->(s) do
           dirs = s.extdirs | s.libdirs | s.appdirs | s.exedirs |
              s.confdirs | s.testdirs | s.mandirs | s.supdirs |
+             s.ridirs | s.dldirs | s.incdirs | s.logdirs | s.statedirs
+ 
+-         dirs.empty? && /.*/ || /^(?!.*#{dirs.join('\b|').gsub('.', '\\\\.')}\b)/
++         dirs.empty? && /.*/ || /^(?!#{dirs.join('\b|').gsub('.', '\\\\.')}\b)/
+       end
+    DOCSRC_RE = /\.rb$/
+ 
 @@ -40,6 +40,13 @@ class Setup::Source::Base
  
     OPTIONS_IN = {
