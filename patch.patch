@@ -91,7 +91,7 @@ index 0000000..c6fb2d2
 +   end
 +end
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
-index 32cee11..a22e627 100644
+index 32cee11..e7ffb9d 100644
 --- a/lib/setup/command.rb
 +++ b/lib/setup/command.rb
 @@ -50,6 +50,7 @@ module Setup
@@ -102,7 +102,19 @@ index 32cee11..a22e627 100644
  
      # Run command.
  
-@@ -388,7 +389,7 @@ module Setup
+@@ -322,6 +323,11 @@ module Setup
+         configuration.ignore_names = val
+       end
+ 
++      # regard path token list
++      parser.on('--regard-path-tokens LIST', 'Regard sources by a token contained in its path, which is specified in the comma-separated list') do |val|
++        configuration.regard_path_tokens = val
++      end
++
+       # regard name list
+       parser.on('--regard-names LIST', 'Regard sources by a name specified in the comma-separated list') do |val|
+         configuration.regard_names = val
+@@ -388,7 +394,7 @@ module Setup
           configuration.new_options.debug_io = str
        end
  
@@ -321,7 +333,7 @@ index 18cca0e..1aaa823 100644
 +   end
  end
 diff --git a/lib/setup/configuration.rb b/lib/setup/configuration.rb
-index 6c26d86..673bc4f 100644
+index 6c26d86..f16a391 100644
 --- a/lib/setup/configuration.rb
 +++ b/lib/setup/configuration.rb
 @@ -6,14 +6,13 @@ require 'shellwords'
@@ -340,7 +352,41 @@ index 6c26d86..673bc4f 100644
  
      # Ruby System Configuration
      RBCONFIG  = ::RbConfig::CONFIG
-@@ -225,7 +224,7 @@ module Setup
+@@ -92,6 +91,8 @@ module Setup
+ 
+     option :'ignore-path-tokens' , :pick, 'ignore sources with the specified comma-separated list of path tokens'
+ 
++    option :'regard-path-tokens' , :pick, 'regard sources with the specified comma-separated list of path tokens'
++
+     option :shebang         , :pick, 'replace a shebang line for a newly installed executables ("",auto,env,ruby,<custom>)'
+ 
+     option :use             , :pick, 'apply the following to the module options'
+@@ -178,6 +179,24 @@ module Setup
+        @ignore_path_tokens || []
+     end
+ 
++    def regard_path_tokens= value
++      @regard_path_tokens =
++      if value.is_a?(String)
++        tokens = (value || '').split(/[,;:]/)
++        tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
++           m = /^\/(?<name>.*)\/?$/.match(x)
++
++           m && m[:name] && Regexp.new(m[:name]) || x
++        end
++      else
++        value
++      end
++    end
++
++    def regard_path_tokens
++       @regard_path_tokens || []
++    end
++
+     def ignore_names= value
+       @ignore_names =
+       if value.is_a?(String)
+@@ -225,7 +244,7 @@ module Setup
      end
  
      def current_alias= value
@@ -349,7 +395,7 @@ index 6c26d86..673bc4f 100644
      end
  
      def current_alias
-@@ -392,10 +391,10 @@ module Setup
+@@ -392,10 +411,11 @@ module Setup
         @new_options ||= {
        rootdir: Dir.pwd,
        spec_type: "rpm",
@@ -360,10 +406,11 @@ index 6c26d86..673bc4f 100644
        aliased_names: [],
 -      ignored_path_tokens: [],
 +      ignore_path_tokens: [],
++      regard_path_tokens: [],
        spec_file: nil,
        maintainer_name: nil,
        maintainer_email: nil,
-@@ -596,7 +595,7 @@ module Setup
+@@ -596,7 +616,7 @@ module Setup
      end
  
      def project= value
@@ -372,7 +419,7 @@ index 6c26d86..673bc4f 100644
      end
  
      #
-@@ -969,7 +968,7 @@ module Setup
+@@ -969,7 +989,7 @@ module Setup
  
      # Save configuration.
      def save_config_with project
@@ -382,7 +429,7 @@ index 6c26d86..673bc4f 100644
        dir = File.dirname(CONFIG_FILE)
        unless File.exist?(dir)
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
-index dd3e47a..ae6c529 100644
+index dd3e47a..d146b08 100644
 --- a/lib/setup/core_ext.rb
 +++ b/lib/setup/core_ext.rb
 @@ -89,6 +89,7 @@ module Kernel
@@ -429,7 +476,7 @@ index dd3e47a..ae6c529 100644
  class Hash
     def deep_merge other, options_in = {}
        return self if other.nil? or other.blank?
-@@ -533,3 +538,17 @@ class Gem::Requirement
+@@ -533,3 +538,65 @@ class Gem::Requirement
        Gem::Requirement.new(reqs)
     end
  end
@@ -444,6 +491,54 @@ index dd3e47a..ae6c529 100644
 +
 +      def [] *args, base: nil, sort: true
 +         dir_cache[[Dir.pwd, args.first]] ||= __system_brackets(*args, base: base)
++      end
++   end
++end
++
++# Forcely replace method/class
++require 'rubygems/dependency_installer.rb'
++module Gem
++   class Dependency
++      class InvalidDependencyNameError < StandardError; end
++
++      alias :orig_merge :merge
++
++      def merge dep_in
++         raise InvalidDependencyNameError if self.name != dep_in.name
++
++         options = {
++            "type" => :runtime,
++            "group" => (self.groups || []) | (dep_in.groups || []),
++         }
++         if self.respond_to?(:platforms) && dep_in.respond_to?(:platforms)
++            options["platforms"] = self.platforms & dep_in.platforms
++         end
++
++         Bundler::Dependency.new(self.name, orig_merge(dep_in).requirement.expand.merge(dep_in.requirement), options)
++      rescue
++        binding.pry
++      end
++   end
++
++   class DependencyInstaller
++      class << self
++         def deps
++            @deps ||= []
++         end
++
++         def store dep
++            path = caller[1].scan(/^(.*):(\d+)(?::.*`(.*)')?\Z/).first.first
++
++            deps << [path, dep]
++         end
++
++         def clean
++            @deps = []
++         end
++      end
++
++      def install dep
++         self.class.store(dep)
 +      end
 +   end
 +end
@@ -767,7 +862,7 @@ index 864e26b..9fe314e 100644
        end
      end
 diff --git a/lib/setup/dsl.rb b/lib/setup/dsl.rb
-index 3d4eca3..bee1697 100755
+index 3d4eca3..0aa7944 100755
 --- a/lib/setup/dsl.rb
 +++ b/lib/setup/dsl.rb
 @@ -16,6 +16,10 @@ class Setup::DSL
@@ -876,9 +971,45 @@ index 3d4eca3..bee1697 100755
     end
  
     def edsl
-@@ -108,27 +128,43 @@ class Setup::DSL
+@@ -97,6 +117,30 @@ class Setup::DSL
+          end
     end
  
++   def external_dependencies
++      return [] unless source_file
++
++      dir = File.dirname(source_file)
++
++      (Gem::DependencyInstaller.instance_variable_get(:@deps) || []).map do |(path, dep)|
++         if path[0...dir.size] == dir
++            Bundler::Dependency.new(dep.name, dep.requirement, "group" => :development)
++         end
++      end.compact
++   end
++
++   def spec_dependencies
++      (spec&.dependencies || []).map do |dep|
++         group_in = :test
++         options = {
++            "group" => dep.type == :development ? [group_in] : [:runtime, group_in],
++            "platforms" => dep.respond_to?(:platforms) ? dep.platforms : []
++         }
++
++         Bundler::Dependency.new(dep.name, dep.requirement, options)
++      end
++   end
++
+    def original_deps_for kinds_in = nil
+       groups = defined_groups_for(kinds_in)
+ 
+@@ -107,28 +151,86 @@ class Setup::DSL
+       end
+    end
+ 
++   def all_dependencies
++      Setup::DSL.merge_dependencies(additional_dependencies, external_dependencies, dsl.dependencies, spec_dependencies)
++   end
++
     def original_deps
 -      @original_deps ||= definition.dependencies
 +      @original_deps ||= definition.dependencies.map do |dep|
@@ -921,10 +1052,48 @@ index 3d4eca3..bee1697 100755
 +      deps_but(original_deps_for(:development))
 +   end
 +
++   class << self
++      def match_kind_dep dep, *kinds_in
++         groups = defined_groups_for(kinds_in)
++
++         (dep.groups & groups).any?
++      end
++
++      def defined_groups_for *kinds_in
++         kinds_in.flatten.map do |k|
++            GROUP_MAPPING.map do |(g, k_in)|
++               [k_in].flatten.include?(k) && g || nil
++            end.compact
++         end.flatten.select {|x| x.is_a?(Symbol) }
++      end
++
++      def merge_dependencies *depses
++         depses.reduce({}) do |res, deps|
++            deps&.reduce(res.dup) do |r, x|
++               r[x.name] =
++                  if r[x.name]
++                     req = r[x.name].requirement.merge(x.requirement)
++                     group = (x.groups || []) | r[x.name].groups
++
++                     Bundler::Dependency.new(x.name, req, "type" => r[x.name].type, "group" => group)
++                  else
++                     x
++                  end
++
++               r
++            end || res
++         end.values
++      end
++
++      def filter_dependencies type, *depses
++         depses.map { |deps| deps.select {|x|x.type == type }}
++      end
++   end
++
     def defined_groups_for kinds_in = nil
        no_groups =
           [kinds_in].compact.flatten.map do |k|
-@@ -168,12 +204,14 @@ class Setup::DSL
+@@ -168,12 +270,14 @@ class Setup::DSL
  
     def to_ruby
        spec = self.spec.dup
@@ -941,7 +1110,7 @@ index 3d4eca3..bee1697 100755
           reqs = deps.map do |dep|
              reqs = dep.requirement.requirements.map {|r| "'#{r[0]} #{r[1]}'" }.join(", ")
           end.join(", ")
-@@ -197,7 +235,10 @@ class Setup::DSL
+@@ -197,7 +301,10 @@ class Setup::DSL
     end
  
     def required_ruby_version
@@ -953,7 +1122,18 @@ index 3d4eca3..bee1697 100755
     end
  
     def required_ruby
-@@ -235,7 +276,7 @@ class Setup::DSL
+@@ -219,6 +326,10 @@ class Setup::DSL
+       self
+    end
+ 
++   def additional_dependencies
++      @additional_dependencies ||= []
++   end
++
+    protected
+ 
+    def deps_but deps
+@@ -235,7 +346,7 @@ class Setup::DSL
  
     #
     def initialize source_file, options = {}
@@ -1008,7 +1188,7 @@ index b1d26b2..9279f13 100644
        spec.files = IO.read('Manifest').split("\n")
        spec.extra_rdoc_files = spec.files.select { |f| DOC_FILTER =~ f }
 diff --git a/lib/setup/extcore/hoe.rb b/lib/setup/extcore/hoe.rb
-index f81887b..1ac1d69 100644
+index f81887b..5c01ac7 100644
 --- a/lib/setup/extcore/hoe.rb
 +++ b/lib/setup/extcore/hoe.rb
 @@ -21,7 +21,7 @@ class Hoe
@@ -1033,7 +1213,18 @@ index f81887b..1ac1d69 100644
        end
  
        def try_require lib
-@@ -117,6 +119,10 @@ class Hoe
+@@ -74,6 +76,10 @@ class Hoe
+          @extras ||= {}
+       end
+ 
++      def spec_extras= value
++         @extras = spec_extras.merge(value)
++      end
++
+       def extra_rdoc_files
+          @extra_rdoc_files ||= []
+       end
+@@ -117,6 +123,10 @@ class Hoe
           []
        end
  
@@ -1044,7 +1235,7 @@ index f81887b..1ac1d69 100644
        # spec
        def spec name = nil, &block
           main
-@@ -155,14 +161,37 @@ class Hoe
+@@ -155,14 +165,37 @@ class Hoe
           @spec.spec.executables = @spec.spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
           @spec.spec.bindir = 'bin'
  
@@ -1086,6 +1277,15 @@ index f81887b..1ac1d69 100644
           self.constants.map {|c| self.const_get(c) }.select {|x| x.is_a?(Module) }.each {|x| extend(x) }
           if self.respond_to?("initialize_#{@spec.spec.name}")
              send("initialize_#{@spec.spec.name}")
+@@ -192,7 +225,7 @@ class Hoe
+          if Hoe.respond_to?(method_name)
+             Hoe.send(method_name, *args)
+          else
+-            super
++            $stderr.puts("[MethodMissing]: #{method_name} with args #{args.inspect} is missing")
+          end
+       end
+    end
 diff --git a/lib/setup/extcore/jeweler.rb b/lib/setup/extcore/jeweler.rb
 index 6caf17e..c9d650a 100644
 --- a/lib/setup/extcore/jeweler.rb
@@ -1176,7 +1376,7 @@ index 0000000..599c016
 +   end
 +end
 diff --git a/lib/setup/installer.rb b/lib/setup/installer.rb
-index ac124f1..4ec68df 100644
+index ac124f1..7a61d4e 100644
 --- a/lib/setup/installer.rb
 +++ b/lib/setup/installer.rb
 @@ -10,7 +10,7 @@ module Setup
@@ -1184,7 +1384,7 @@ index ac124f1..4ec68df 100644
  
       def targets
 -        project.targets
-+       @targets ||= project.targets.select {|t| t.source.valid? && !project.is_disabled?(t.source) }
++       @targets ||= project.targets.select {|t| project.valid_sources.include?(t.source) }
       end
      #
      def install_prefix
@@ -1395,7 +1595,7 @@ index ec13ad6..2ffcdd0 100644
     end
  end
 diff --git a/lib/setup/project.rb b/lib/setup/project.rb
-index 57ef1b6..13bab86 100644
+index 57ef1b6..c318e48 100644
 --- a/lib/setup/project.rb
 +++ b/lib/setup/project.rb
 @@ -32,14 +32,16 @@ module Setup
@@ -1419,12 +1619,13 @@ index 57ef1b6..13bab86 100644
            gem: '*',
            gemfile: '&',
            rakefile: '^',
-@@ -48,27 +50,39 @@ module Setup
+@@ -48,27 +50,44 @@ module Setup
         STATUS_CHARS = {
            invalid: 'X',
            disabled: '-',
 +          obsoleted: '\\',
            duplicated: '=',
++          regarded: 'R',
            valid: 'V',
         }
  
@@ -1439,6 +1640,10 @@ index 57ef1b6..13bab86 100644
 +      jruby: false,
 +      mingw: false,
 +   }
++       VERSIONS = {
++          /nonrelease/ => false 
++       }
++
 +
 +       attr_reader :config, :version_replaces
  
@@ -1464,7 +1669,7 @@ index 57ef1b6..13bab86 100644
  
          if file = find('.setup/name')
            @name = File.read(file).strip
-@@ -89,8 +103,11 @@ module Setup
+@@ -89,8 +108,11 @@ module Setup
         info("Source list are the following:")
         stat_source_tree.each do |(path_in, stated_sources)|
            stated_sources.each do |(source, status)|
@@ -1478,7 +1683,7 @@ index 57ef1b6..13bab86 100644
               info(info_in)
            end
         end
-@@ -118,7 +135,7 @@ module Setup
+@@ -118,7 +140,7 @@ module Setup
  
      def to_h
         {
@@ -1487,7 +1692,7 @@ index 57ef1b6..13bab86 100644
            options: options,
            rootdir: rootdir
         }
-@@ -128,69 +145,97 @@ module Setup
+@@ -128,69 +150,121 @@ module Setup
         config.gem_version_replace.first.last
      end
  
@@ -1496,46 +1701,12 @@ index 57ef1b6..13bab86 100644
 -    def sources
 -       @sources ||= Setup::Source.search(rootdir, options)
 -    end
-+      # returns all the sources with their statuses, and sorted by their root value
-+      #
-+      def stat_sources &block
-+         return @stat_sources if @stat_sources
-+
-+         @stat_sources = Setup::Source.search(rootdir, options).group_by do |x|
-+               x.name
-+            end.reduce([[],[]]) do |(r, used_in), (full_name, v)|
-+               sorten =
-+                  v.sort do |x,y|
-+                     c0 = Setup::Source.loaders.index(x.loader) <=> Setup::Source.loaders.index(y.loader)
-+                     c1 = c0 == 0 && x.name <=> y.name || c0
-+                     c2 = c1 == 0 && y.version <=> x.version || c1
-+                     c3 = c2 == 0 && y.platform.to_s <=> x.platform.to_s || c2
-+                     c4 = c3 == 0 && y.source_names.grep(/gemspec/).count <=> x.source_names.grep(/gemspec/).count
-+
-+                     c2 == 0 && c3 == 0 && c4 == 0 && x.root.size <=> y.root.size || c4 != 0 && c4 || c3 != 0 && c3 || c2
-+                  end.reduce([[], 0]) do |(res, index, base), source|
-+                     dup = used_in.include?(source.name) && base && base.platform.to_s == source.platform.to_s && base.version == source.version
-+                     dup_index = dup ? index + 1 : index
-+                     obs = used_in.include?(source.name) && !dup
-+                     if source.valid? && !is_disabled?(source)
-+                        base = source
-+                        used_in = used_in | [source.name]
-+                     end
-+
-+                     [res | [[source, source_status(source, dup, obs)]], dup_index, base]
-+                  end.first
-+
-+               sorten[1..-1].each { |x| sorten.first.first.alias_to(x.first) }
-+
-+               [r|[sorten], used_in]
-+            end.first.flatten(1).sort_by {|(x, _)| x.root.size }.each do |(source, status)|
-+               block[source, status] if block_given?
-+            end
-+
-+         show_tree
-+
-+         @stat_sources
-+      end
++   def pre_sources
++      @pre_sources ||=
++         Setup::Source.search(rootdir, options).group_by do |x|
++            [x.name, x.version].compact.join(":")
++         end
++   end
  
 -    # returns all the sources with their statuses, and sorted by a its root value
 -    #
@@ -1554,6 +1725,64 @@ index 57ef1b6..13bab86 100644
 -             block[source, status] if block_given?
 -          end
 -    end
++   # returns all the sources with their statuses, and sorted by a its rootdir value
++   #
++   def stat_sources &block
++      return @stat_sources if @stat_sources
++
++      @stat_sources = proceed_sources(&block)
++
++      show_tree
++
++      @stat_sources
++   end
++
++   def proceed_sources &block
++      pre = 
++         pre_sources.reduce([[],[],[]]) do |(r, used_in, deps_in), (_full_name, v)|
++            sorten =
++               v.sort do |x,y|
++                  c0 = ::Setup::Source.loaders.index(x.loader) <=> ::Setup::Source.loaders.index(y.loader)
++                  c1 = c0 == 0 && x.name <=> y.name || c0
++                  c2 = c1 == 0 && y.version <=> x.version || c1
++                  c3 = c2 == 0 && y.platform.to_s <=> x.platform.to_s || c2
++                  c4 = c3 == 0 && y.source_names.grep(/gemspec/).count <=> x.source_names.grep(/gemspec/).count
++
++                  c2 == 0 && c3 == 0 && c4 == 0 && x.root.size <=> y.root.size || c4 != 0 && c4 || c3 != 0 && c3 || c2
++               end.reduce([[], 0]) do |(res, index, base), source|
++                  dup = used_in.include?(source.name) && base && base.platform.to_s == source.platform.to_s && base.version == source.version && base.class == source.class
++                  dup_index = dup ? index + 1 : index
++                  obs = used_in.include?(source.name) && !dup
++                  if source.valid? && !is_disabled?(source)
++                     base = source
++                     used_in = used_in | [source.name]
++                  end
++
++                  [res | [[source, source_status(source, dup, obs)]], dup_index, base]
++               end.first
++
++            deps = deps_in | sorten.map {|source, status| status == :valid ? source.dependencies : [] }.flatten
++
++            sorten[1..-1].each { |x| sorten.first.first.alias_to(x.first) }
++
++            [r|[sorten], used_in, deps]
++         end
++
++      pre.first.flatten(1).map do |(source, status)|
++            if status == :disabled &&
++               pre[2].any? do |dep|
++                  dep.name == source.name && source.is_a?(Setup::Source::Gem) &&
++                  dep.requirement.satisfied_by?(source.provide.requirement.requirements.last.last)
++               end
++               [source, :regarded]
++            else
++               [source, status]
++            end
++         end.sort_by {|(x, _)| x.root.size }.each do |(source, status)|
++            block[source, status] if block_given?
++         end
++   end
++
 +      # returns source tree, and sorted, and then grouped by a its rootdir value
 +      #
 +      def stat_source_tree
@@ -1623,7 +1852,7 @@ index 57ef1b6..13bab86 100644
      def valid_sources
 -       @valid_sources = stat_sources.map {|(source, status)| status == :valid && source || nil }.compact
 +       @valid_sources ||= begin
-+          sources = stat_sources.map {|(source, status)| status == :valid ? source : nil }.compact
++          sources = stat_sources.map {|(source, status)| %i(valid regarded).include?(status) ? source : nil }.compact
 +          main = sources.find { |source| source.root == rootdir }
 +          main && main.valid? ? sources : sources | [default_fake_source]
 +       end
@@ -1636,7 +1865,7 @@ index 57ef1b6..13bab86 100644
      # options for the object
      #
      def new_source type, object_options_in
-@@ -206,24 +251,47 @@ module Setup
+@@ -206,24 +280,62 @@ module Setup
  #       option_keys.map { |key| [ key, options_in[ key ]] }.to_h
  #    end
  
@@ -1670,21 +1899,36 @@ index 57ef1b6..13bab86 100644
 +      @ignored_path_tokens ||= (config.ignore_path_tokens || []) | DEFAULT_IGNORE_PATH_TOKES
 +   end
 +
++   def regarded_path_tokens
++      @regarded_path_tokens ||= (config.regard_path_tokens || [])
++   end
++
 +   def is_platform_allowed? platform
 +      case platform
 +      when Gem::Platform
 +         PLATFORMS.any? {|(name, valid)| platform === name ? valid : nil }
 +      when String
-+         PLATFORMS[platform.to_sym]
++         !!PLATFORMS[platform.to_sym]
 +      when NilClass
 +         true
 +      else
-+         raise
++         false
++      end
++   end
++
++   def is_version_allowed? version
++      if /^[0-9\.]+(\.(?<post>[a-z]*|))?$/ =~ version
++         !post || VERSIONS.reduce(true) {|res, (re, v)| res && (re =~ post ? v : false) }
 +      end
 +   end
 +
 +   def is_disabled? source
-+      !is_platform_allowed?(source.platform) ||
++      !is_platform_allowed?(source.platform) || !is_version_allowed?(source.version) ||
++         regarded_path_tokens.map do |t|
++            t.is_a?(Regexp) && %r{/[^/]*#{t}[^/]*/} || %r{/#{t}/}
++         end.all? do |t|
++            t !~ source.source_file
++         end &&
 +         ignored_path_tokens.map do |t|
 +            t.is_a?(Regexp) && %r{/[^/]*#{t}[^/]*/} || %r{/#{t}/}
 +         end.any? do |t|
@@ -1700,7 +1944,7 @@ index 57ef1b6..13bab86 100644
  
      #
      def yardopts
-@@ -255,9 +323,9 @@ module Setup
+@@ -255,9 +367,9 @@ module Setup
      end
  
      def autoalias
@@ -1712,7 +1956,7 @@ index 57ef1b6..13bab86 100644
            config.current_source_name = source.name
  
            name = source.name.gsub(/[_\-\.]+/, '-')
-@@ -287,11 +355,11 @@ module Setup
+@@ -287,11 +399,11 @@ module Setup
              valid_sources.map do |source|
                 case source
                 when Setup::Source::Gem
@@ -1989,7 +2233,7 @@ index 40bf0e7..a71c175 100644
  end
  
 diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
-index 940dbbc..41de2b3 100644
+index 940dbbc..df5ce6a 100644
 --- a/lib/setup/source/base.rb
 +++ b/lib/setup/source/base.rb
 @@ -4,7 +4,8 @@ require 'setup/log'
@@ -2018,7 +2262,7 @@ index 940dbbc..41de2b3 100644
        end
     DOCSRC_RE = /\.rb$/
  
-@@ -40,9 +41,17 @@ class Setup::Source::Base
+@@ -40,11 +41,21 @@ class Setup::Source::Base
  
     OPTIONS_IN = {
        aliases: ->(o, name) { o.is_a?(Hash) && [ o[nil], o[name], o.values.map {|x|x.flatten}.select {|x|x.include?(name)}.map {|x|x.first}.flatten ].flatten.compact.uniq || o },
@@ -2036,8 +2280,12 @@ index 940dbbc..41de2b3 100644
 +      loader: true,
        gemspec: true,
        source_names: true,
++      name: true,
++      version: true,
        srcridirses: :name_or_default,
-@@ -75,7 +84,7 @@ class Setup::Source::Base
+       srcincdirses: :name_or_default,
+       srcextdirses: :name_or_default,
+@@ -75,7 +86,7 @@ class Setup::Source::Base
        srcstatedirs: true,
     }
  
@@ -2046,7 +2294,7 @@ index 940dbbc..41de2b3 100644
     attr_writer :replace_list, :source_names
  
     class << self
-@@ -137,26 +146,25 @@ class Setup::Source::Base
+@@ -137,26 +148,25 @@ class Setup::Source::Base
           version)
     end
  
@@ -2082,9 +2330,16 @@ index 940dbbc..41de2b3 100644
     def dsl
        @dsl ||= options[:dsl] ||
           Setup::DSL.new(source_file,
-@@ -167,11 +175,11 @@ class Setup::Source::Base
+@@ -166,12 +176,18 @@ class Setup::Source::Base
+             append_list: options[:gem_append_list])
     end
  
++   def all_dependencies
++      compilables # NOTE required to collect build deps
++
++      dsl.all_dependencies
++   end
++
     def replace_list
 -      options[:gem_version_replace]
 +      @gem_version_replace ||= options[:gem_version_replace] || {}
@@ -2097,7 +2352,7 @@ index 940dbbc..41de2b3 100644
     end
  
     # dirs
-@@ -249,7 +257,7 @@ class Setup::Source::Base
+@@ -249,7 +265,7 @@ class Setup::Source::Base
     end
  
     def has_name? name
@@ -2106,7 +2361,27 @@ index 940dbbc..41de2b3 100644
     end
  
     def if_file file
-@@ -282,6 +290,14 @@ class Setup::Source::Base
+@@ -274,6 +290,19 @@ class Setup::Source::Base
+       end
+    end
+ 
++   def compilables
++      # TODO make compilables from ext
++      extfiles
++   end
++
++   def provide
++      Bundler::Dependency.new(name, "= #{version || "0"}", "group" => [:default])
++   end
++
++   def dependencies *types
++      all_dependencies.select {|dep| types.empty? || types.include?(dep.type) }
++   end
++
+    def + other
+       self.replace_list = replace_list.merge(other.replace_list)
+       self.source_names = source_names | other.source_names
+@@ -282,6 +311,14 @@ class Setup::Source::Base
        self
     end
  
@@ -2121,7 +2396,7 @@ index 940dbbc..41de2b3 100644
     protected
  
     def exedir
-@@ -300,14 +316,24 @@ class Setup::Source::Base
+@@ -300,14 +337,24 @@ class Setup::Source::Base
        end.flatten.compact.select { |file| if_dir(file) }
     end
  
@@ -2149,7 +2424,7 @@ index 940dbbc..41de2b3 100644
  
        if block_given?
           # TODO deep_merge
-@@ -315,7 +341,7 @@ class Setup::Source::Base
+@@ -315,7 +362,7 @@ class Setup::Source::Base
        end
  
        tree_in.map do |dir, files_in|
@@ -2158,7 +2433,7 @@ index 940dbbc..41de2b3 100644
              files_in.select do |file|
                 re =~ file && File.file?(file) && (!prc || prc[self, file, dir])
              end
-@@ -336,6 +362,16 @@ class Setup::Source::Base
+@@ -336,6 +383,16 @@ class Setup::Source::Base
     end
  
     def initialize options_in = {}
@@ -2177,10 +2452,10 @@ index 940dbbc..41de2b3 100644
  end
 diff --git a/lib/setup/source/fake.rb b/lib/setup/source/fake.rb
 new file mode 100644
-index 0000000..dbf87ff
+index 0000000..2502c7d
 --- /dev/null
 +++ b/lib/setup/source/fake.rb
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,22 @@
 +class Setup::Source::Fake < Setup::Source::Base
 +   OPTIONS_IN = {
 +      source_file: true,
@@ -2195,12 +2470,16 @@ index 0000000..dbf87ff
 +         append_list: options[:gem_append_list])
 +   end
 +
++   def datatree
++      []
++   end
++
 +   def valid?
 +      @valid
 +   end
 +end
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
-index c332f3c..8d17a5c 100644
+index c332f3c..174435d 100644
 --- a/lib/setup/source/gem.rb
 +++ b/lib/setup/source/gem.rb
 @@ -13,7 +13,7 @@ require 'setup/loader/git-version-gen'
@@ -2248,7 +2527,7 @@ index c332f3c..8d17a5c 100644
                 prever = options_in[:gem_version_replace].find {|(n,v)| n == spec.name }&.last
                 /([=><]+\s*)?(?<version>.*)/ =~ prever
                 version
-@@ -99,30 +93,32 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -99,40 +93,33 @@ class Setup::Source::Gem < Setup::Source::Base
  
                    result = send(method_name, f)
  
@@ -2281,17 +2560,14 @@ index c332f3c..8d17a5c 100644
              end
           end.flatten.compact
        end
- 
-       def new_if_valid spec, options_in = {}
+-
+-      def new_if_valid spec, options_in = {}
 -         if spec && spec.version && spec.platform == 'ruby' && spec.name !~ /\u0000/
-+         if spec && spec.version && (spec.platform == 'ruby' ||
-+              spec.platform.cpu == RbConfig::CONFIG["target_cpu"]) && spec.name !~ /\u0000/
-                # !($:&spec.full_require_paths).any? && !spec.full_require_paths.all? {|p| File.directory?(p) }
-+            self.new(source_options(options_in.merge(spec: spec, source_file: f, loader: data[:loader])))
-             self.new(source_options({ spec: spec }.merge(options_in)))
-          end
-       end
-@@ -130,9 +126,9 @@ class Setup::Source::Gem < Setup::Source::Base
+-               # !($:&spec.full_require_paths).any? && !spec.full_require_paths.all? {|p| File.directory?(p) }
+-            self.new(source_options({ spec: spec }.merge(options_in)))
+-         end
+-      end
+    end
  
     def gemfile
        @gemfile ||= Setup::Source::Gemfile.new(
@@ -2303,7 +2579,7 @@ index c332f3c..8d17a5c 100644
           gem_append_list: [ self.dep ])
     end
  
-@@ -141,13 +137,33 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -141,13 +128,33 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
     def dep
@@ -2338,7 +2614,7 @@ index c332f3c..8d17a5c 100644
     def name
        spec && spec.name
     end
-@@ -160,33 +176,37 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -160,33 +167,37 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
     def gemspec_path
@@ -2388,7 +2664,7 @@ index c332f3c..8d17a5c 100644
     end
  
     def allfiles_for list_in
-@@ -195,8 +215,22 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -195,8 +206,22 @@ class Setup::Source::Gem < Setup::Source::Base
        end.to_h
     end
  
@@ -2412,7 +2688,7 @@ index c332f3c..8d17a5c 100644
     end
  
     def testtree
-@@ -225,13 +259,24 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -225,13 +250,24 @@ class Setup::Source::Gem < Setup::Source::Base
     # Returns true when name of the gem is set.
     #
     def valid?
@@ -2438,7 +2714,7 @@ index c332f3c..8d17a5c 100644
     def to_h
        # TODO !ruby/array:Files strangely appeared during building the securecompare gem, what leads to exceptions on load
        super.merge(spec: spec.to_yaml.gsub(/!ruby\/array:Files/, ""))
-@@ -255,12 +300,11 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -255,12 +291,11 @@ class Setup::Source::Gem < Setup::Source::Base
           paths.any? && paths || ['lib'])
     end
  
@@ -2455,7 +2731,7 @@ index c332f3c..8d17a5c 100644
     end
  
     def gemspec
-@@ -271,8 +315,8 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -271,8 +306,8 @@ class Setup::Source::Gem < Setup::Source::Base
  
     def detect_root
        if spec
