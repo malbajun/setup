@@ -429,10 +429,18 @@ index 6c26d86..f16a391 100644
        dir = File.dirname(CONFIG_FILE)
        unless File.exist?(dir)
 diff --git a/lib/setup/core_ext.rb b/lib/setup/core_ext.rb
-index dd3e47a..d146b08 100644
+index dd3e47a..4f37e0e 100644
 --- a/lib/setup/core_ext.rb
 +++ b/lib/setup/core_ext.rb
-@@ -89,6 +89,7 @@ module Kernel
+@@ -2,6 +2,7 @@
+ # Ruby Extensions
+ #
+ require 'bundler'
++require 'ostruct'
+ 
+ Encoding.default_external = Encoding::UTF_8
+ 
+@@ -89,6 +90,7 @@ module Kernel
        'olddoc' => 'setup/extcore/olddoc',
        'wrongdoc' => 'setup/extcore/wrongdoc',
        'bones' => 'setup/extcore/bones',
@@ -440,7 +448,7 @@ index dd3e47a..d146b08 100644
        'echoe' => 'setup/extcore/echoe',
        'jeweler' => 'setup/extcore/jeweler',
        'hoe' => 'setup/extcore/hoe',
-@@ -112,8 +113,6 @@ module Kernel
+@@ -112,8 +114,6 @@ module Kernel
     end
  
     def require mod
@@ -449,7 +457,7 @@ index dd3e47a..d146b08 100644
        if MODULES[mod]
           if MODULES[mod].is_a?(Proc)
              MODULES[mod][]
-@@ -121,11 +120,11 @@ module Kernel
+@@ -121,11 +121,11 @@ module Kernel
              begin
                 __setup_orig_require(MODULES[mod])
              rescue => e1
@@ -463,7 +471,7 @@ index dd3e47a..d146b08 100644
        end
     end
  
-@@ -259,6 +258,12 @@ class Symbol
+@@ -259,6 +259,12 @@ class Symbol
     end
  end
  
@@ -476,7 +484,27 @@ index dd3e47a..d146b08 100644
  class Hash
     def deep_merge other, options_in = {}
        return self if other.nil? or other.blank?
-@@ -533,3 +538,65 @@ class Gem::Requirement
+@@ -334,7 +340,18 @@ class Object
+    end
+ 
+    def to_os
+-      OpenStruct.new(self.to_h.map {|(x, y)| [x.to_s, y] }.to_h)
++      def to_os hash: false, array: false
++         self.to_h.reduce(::OpenStruct.new) do |res, (x, y_in)|
++            res[x.to_s] =
++               if hash && y_in.is_a?(Hash) || array && y_in.is_a?(Array)
++                  y_in.to_os(hash: hash, array: array)
++               else
++                  y_in
++               end
++
++            res
++         end
++      end
+    end
+ end
+ 
+@@ -533,3 +550,65 @@ class Gem::Requirement
        Gem::Requirement.new(reqs)
     end
  end
@@ -2452,7 +2480,7 @@ index 940dbbc..df5ce6a 100644
  end
 diff --git a/lib/setup/source/fake.rb b/lib/setup/source/fake.rb
 new file mode 100644
-index 0000000..2502c7d
+index 0000000..7cf674b
 --- /dev/null
 +++ b/lib/setup/source/fake.rb
 @@ -0,0 +1,22 @@
@@ -2470,7 +2498,7 @@ index 0000000..2502c7d
 +         append_list: options[:gem_append_list])
 +   end
 +
-+   def datatree
++   def tree *_
 +      []
 +   end
 +
