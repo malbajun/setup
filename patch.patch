@@ -2261,7 +2261,7 @@ index 40bf0e7..a71c175 100644
  end
  
 diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
-index 940dbbc..df5ce6a 100644
+index 940dbbc..15d7287 100644
 --- a/lib/setup/source/base.rb
 +++ b/lib/setup/source/base.rb
 @@ -4,7 +4,8 @@ require 'setup/log'
@@ -2322,15 +2322,28 @@ index 940dbbc..df5ce6a 100644
     attr_writer :replace_list, :source_names
  
     class << self
-@@ -137,26 +148,25 @@ class Setup::Source::Base
-          version)
+@@ -132,31 +143,35 @@ class Setup::Source::Base
     end
  
+    def version
+-      @version ||= (
+-         /-(?<version>[\d\.]+)$/ =~ fullname
+-         version)
++      @version ||=
++         root.split("/").reverse.reduce(nil) do |v, token|
++            return v if v
++
++            /-(?<version>[\d\.]+)$/ =~ token
++
++            version
++         end
++   end
++
 +   # ruby platform is default for non-gem sources
 +   def platform
 +      'ruby'
-+   end
-+
+    end
+ 
     def root
        @root ||= detect_root
     end
@@ -2358,7 +2371,7 @@ index 940dbbc..df5ce6a 100644
     def dsl
        @dsl ||= options[:dsl] ||
           Setup::DSL.new(source_file,
-@@ -166,12 +176,18 @@ class Setup::Source::Base
+@@ -166,12 +181,18 @@ class Setup::Source::Base
              append_list: options[:gem_append_list])
     end
  
@@ -2380,7 +2393,7 @@ index 940dbbc..df5ce6a 100644
     end
  
     # dirs
-@@ -249,7 +265,7 @@ class Setup::Source::Base
+@@ -249,7 +270,7 @@ class Setup::Source::Base
     end
  
     def has_name? name
@@ -2389,7 +2402,7 @@ index 940dbbc..df5ce6a 100644
     end
  
     def if_file file
-@@ -274,6 +290,19 @@ class Setup::Source::Base
+@@ -274,6 +295,19 @@ class Setup::Source::Base
        end
     end
  
@@ -2409,7 +2422,7 @@ index 940dbbc..df5ce6a 100644
     def + other
        self.replace_list = replace_list.merge(other.replace_list)
        self.source_names = source_names | other.source_names
-@@ -282,6 +311,14 @@ class Setup::Source::Base
+@@ -282,6 +316,14 @@ class Setup::Source::Base
        self
     end
  
@@ -2424,7 +2437,7 @@ index 940dbbc..df5ce6a 100644
     protected
  
     def exedir
-@@ -300,14 +337,24 @@ class Setup::Source::Base
+@@ -300,14 +342,24 @@ class Setup::Source::Base
        end.flatten.compact.select { |file| if_dir(file) }
     end
  
@@ -2452,7 +2465,7 @@ index 940dbbc..df5ce6a 100644
  
        if block_given?
           # TODO deep_merge
-@@ -315,7 +362,7 @@ class Setup::Source::Base
+@@ -315,7 +367,7 @@ class Setup::Source::Base
        end
  
        tree_in.map do |dir, files_in|
@@ -2461,7 +2474,7 @@ index 940dbbc..df5ce6a 100644
              files_in.select do |file|
                 re =~ file && File.file?(file) && (!prc || prc[self, file, dir])
              end
-@@ -336,6 +383,16 @@ class Setup::Source::Base
+@@ -336,6 +388,16 @@ class Setup::Source::Base
     end
  
     def initialize options_in = {}
