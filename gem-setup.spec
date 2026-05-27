@@ -3,7 +3,7 @@
 
 Name:          gem-%pkgname
 Version:       5.999.6
-Release:       alt24
+Release:       alt25
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
 License:       BSD-2-Clause
@@ -43,26 +43,14 @@ Summary(ru_RU.UTF-8): Исполнямка для самоцвета %gemname
 Group:         Development/Ruby
 BuildArch:     noarch
 Requires:      gem(setup) = %version
+Requires:      rpm-macros-ruby
+Requires:      rake
 
 %description   -n setup-rb
 Executable file for %gemname gem.
 
 %description   -n setup-rb -l ru_RU.UTF8
 Исполнямка для %gemname самоцвета.
-
-
-%package       doc
-Summary:       Documentation files for %gemname gem
-Summary(ru_RU.UTF-8): Файлы сведений для самоцвета %gemname
-Group:         Development/Documentation
-BuildArch:     noarch
-Requires:      gem(setup) = %version
-
-%description   doc
-Documentation files for %gemname gem.
-
-%description   doc -l ru_RU.UTF8
-Файлы сведений для самоцвета %gemname.
 
 
 %prep
@@ -90,11 +78,15 @@ export PATH=$PATH:$(pwd)/bin
 %doc README*
 %ruby_bindir/setup-rb
 
-%files         doc
-#%ruby_gemdocdir
-
 
 %changelog
+* Tue May 26 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.6-alt25
+- ! install mode for all the files by default is 644
+- ! filter out duplicated files from lib and data groups when installation
+- - removed doc package from spec
+- * optimized command run to support multiple commands
+- * relaxed options filter
+
 * Tue Mar 17 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.6-alt24
 - ! select version over all the sources's full path from downdir to updir
 

@@ -90,8 +90,21 @@ index 0000000..c6fb2d2
 +      end
 +   end
 +end
+diff --git a/lib/setup/actor/link.rb b/lib/setup/actor/link.rb
+index 321bd7f..51186a8 100644
+--- a/lib/setup/actor/link.rb
++++ b/lib/setup/actor/link.rb
+@@ -13,7 +13,7 @@ module Setup::Actor::Link
+          source_file = File.join(source_dir, file)
+          FileUtils.mkdir_p(File.dirname(target_file))
+          FileUtils.rm_rf(target_file)
+-         FileUtils.ln_s(source_file, target_file, force: true)
++         FileUtils.ln_sr(source_file, target_file, force: true)
+          $stdout.puts "  #{source_file} -> #{target_file}"
+       end
+    end
 diff --git a/lib/setup/command.rb b/lib/setup/command.rb
-index 32cee11..e7ffb9d 100644
+index 32cee11..cf5e963 100644
 --- a/lib/setup/command.rb
 +++ b/lib/setup/command.rb
 @@ -50,6 +50,7 @@ module Setup
@@ -102,7 +115,76 @@ index 32cee11..e7ffb9d 100644
  
      # Run command.
  
-@@ -322,6 +323,11 @@ module Setup
+@@ -59,12 +60,12 @@ module Setup
+       #session = Session.new(:io=>$stdio)
+       #config  = session.configuration
+ 
+-      task = ARGV.find{ |a| a !~ /^[-]/ }
+-      task = 'all' unless task
++      tasks = ARGV.select{ |a| a !~ /^[-]/ }
++      tasks = 'all' if tasks.empty?
+ 
+       #task = 'doc' if task == 'document'
+ 
+-      unless task_names.include?(task)
++      if (task_names | tasks) != task_names
+         $stderr.puts "Not a valid task -- #{task}"
+         exit 1
+       end
+@@ -75,21 +76,7 @@ module Setup
+       parser.banner = "Usage: #{File.basename($0)} [TASK] [OPTIONS]"
+ 
+       optparse_header(parser, options)
+-      case task
+-      when 'build'
+-        optparse_config(parser, options)
+-        optparse_document(parser, options)
+-      when 'document'
+-        optparse_document(parser, options)
+-      when 'test'
+-        optparse_test(parser, options)
+-      when 'install'
+-        optparse_install(parser, options)
+-      when 'all'
+-        optparse_all(parser, options)
+-      when 'show'
+-        optparse_show(parser, options)
+-      end
++      optparse_all(parser, options)
+       optparse_common(parser, options)
+ 
+       begin
+@@ -110,17 +97,19 @@ module Setup
+         $stderr.puts "(#{RUBY_VERSION} #{RUBY_PLATFORM})"
+       end
+ 
+-      if configuration.compat
+-        Setup::Base.bash(configuration.compat, task, "--prefix=#{configuration.install_prefix}")
+-      end
++      tasks.each do |task|
++         if configuration.compat
++           Setup::Base.bash(configuration.compat, task, "--prefix=#{configuration.install_prefix}")
++         end
+ 
+-      begin
+-        session.apply(task)
+-      rescue Error => err
+-        raise err if $DEBUG
+-        $stderr.puts $!.message
+-        $stderr.puts "Try 'setup.rb --help' for detailed usage."
+-        abort $!.message #exit 1
++         begin
++           session.apply(task)
++         rescue Error => err
++           raise err if $DEBUG
++           $stderr.puts $!.message
++           $stderr.puts "Try 'setup.rb --help' for detailed usage."
++           abort $!.message #exit 1
++         end
+       end
+ 
+       puts unless session.quiet?
+@@ -322,6 +311,11 @@ module Setup
          configuration.ignore_names = val
        end
  
@@ -114,7 +196,7 @@ index 32cee11..e7ffb9d 100644
        # regard name list
        parser.on('--regard-names LIST', 'Regard sources by a name specified in the comma-separated list') do |val|
          configuration.regard_names = val
-@@ -388,7 +394,7 @@ module Setup
+@@ -388,7 +382,7 @@ module Setup
           configuration.new_options.debug_io = str
        end
  
@@ -571,7 +653,7 @@ index dd3e47a..4f37e0e 100644
 +   end
 +end
 diff --git a/lib/setup/deps.rb b/lib/setup/deps.rb
-index 58eda25..1c3a76f 100644
+index 58eda25..32907c5 100644
 --- a/lib/setup/deps.rb
 +++ b/lib/setup/deps.rb
 @@ -17,8 +17,10 @@ class Setup::Deps
@@ -716,7 +798,30 @@ index 58eda25..1c3a76f 100644
           end
        end
     end
-@@ -127,10 +197,10 @@ class Setup::Deps
+@@ -118,8 +188,20 @@ class Setup::Deps
+          File.join(target.root, file)
+       end.map do |file|
+          if File.symlink?(file)
+-            realfile = File.readlink(file)
+-            IO.read(File.join(target.root, realfile), mode: 'rb').split("\n").first
++            realfile_in = File.readlink(file)
++            realfile =
++               if File.absolute_path?(realfile_in)
++                  realfile_in
++               else
++                  dir =
++                     if File.absolute_path?(file)
++                        File.dirname(file)
++                     else
++                        File.join(target.root, File.dirname(file))
++                     end
++                  File.join(dir, realfile_in)
++               end
++            IO.read(realfile, mode: 'rb').split("\n").first
+          elsif File.exist?(file)
+             IO.read(file, mode: 'rb').split("\n").first
+          end
+@@ -127,10 +209,10 @@ class Setup::Deps
           if match = /#!\s*(?<exec>\S+)/.match(line)
              match[:exec]
           else
@@ -729,7 +834,7 @@ index 58eda25..1c3a76f 100644
     end
  
     def deps_execs target
-@@ -168,20 +238,67 @@ class Setup::Deps
+@@ -168,20 +250,67 @@ class Setup::Deps
     end
  
     class << self
@@ -811,7 +916,7 @@ index 58eda25..1c3a76f 100644
           end
        end
     end
-@@ -193,3 +310,4 @@ class Setup::Deps
+@@ -193,3 +322,4 @@ class Setup::Deps
        @options = options
     end
  end
@@ -1404,7 +1509,7 @@ index 0000000..599c016
 +   end
 +end
 diff --git a/lib/setup/installer.rb b/lib/setup/installer.rb
-index ac124f1..7a61d4e 100644
+index ac124f1..f4c86a1 100644
 --- a/lib/setup/installer.rb
 +++ b/lib/setup/installer.rb
 @@ -10,7 +10,7 @@ module Setup
@@ -1416,7 +1521,22 @@ index ac124f1..7a61d4e 100644
       end
      #
      def install_prefix
-@@ -87,6 +87,12 @@ module Setup
+@@ -29,7 +29,6 @@ module Setup
+         _install :inc
+         _install :app
+         _install :log
+-        _install :state
+         _install :test
+         _install :sup
+         _install :conf
+@@ -81,12 +80,18 @@ module Setup
+           Dir.chdir(File.join(target.source.root, dir)) do
+             io.puts "  % #{target.source.name} < #{dir}" unless quiet?
+ 
+-            novel_install_files(files, File.join(target.datadir, dir), options)
++            novel_install_files(files, File.join(target.datadir, dir), options.merge(mode: 0644))
+           end
+         end
        end
      end
  
@@ -1429,7 +1549,7 @@ index ac124f1..7a61d4e 100644
      # Install for kind
      def _install kind
        io.puts "* {#{kind}} ->" unless quiet?
-@@ -97,7 +103,7 @@ module Setup
+@@ -97,10 +102,10 @@ module Setup
          target.source.send("#{kind}tree").each do |dir, files|
            target_dir = is_external && target.send("#{kind}dir") || File.join(target.send("#{kind}dir"), dir)
  
@@ -1437,8 +1557,21 @@ index ac124f1..7a61d4e 100644
 +          chdir(File.join(target.source.root, dir)) do
              io.puts "  % #{target.source.name} < #{dir}" unless quiet?
  
-             novel_install_files(files, target_dir, options.merge(mode: 0755))
-@@ -139,7 +145,7 @@ module Setup
+-            novel_install_files(files, target_dir, options.merge(mode: 0755))
++            novel_install_files(files, target_dir, options.merge(mode: 0644))
+           end
+ 
+           if is_external
+@@ -108,7 +113,7 @@ module Setup
+             #binding.pry
+             novel_install_files(target.send("#{kind}dir"),
+                                 target.datadir,
+-                                options.merge(mode: 0755,
++                                options.merge(mode: 0644,
+                                               symlink: true,
+                                               as: dir))
+           end
+@@ -139,7 +144,7 @@ module Setup
                    }
                    doc = Ronn::Document.new(file, opts)
                    output = doc.convert('roff')
@@ -1447,6 +1580,46 @@ index ac124f1..7a61d4e 100644
                    tmp.write(output)
                    tmp.rewind
                    novel_install_files([ tmp.path ], File.join(target.mandir, File.dirname(file)), options.merge(mode: 0644, as: file.gsub('.ronn', '')))
+@@ -321,10 +326,16 @@ module Setup
+ 
+         FileUtils.mkdir_p(File.dirname(dest_file))
+         if options[:symlink]
+-          io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
+-          # FileUtils.rm_rf(dest_file)
+           if !File.exist?(dest_file)
+-            FileUtils.ln_s(file, dest_file, force: true)
++            if File.absolute_path?(file)
++              io.puts "    [#{chroot}]#{file} -> [#{chroot}]#{dest_file_in}"
++              FileUtils.ln_sr(File.join(chroot, file), dest_file, force: true)
++              FileUtils.mkdir_p(File.join(chroot, file)) unless File.exist?(File.join(chroot, file))
++            else
++              io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
++              FileUtils.ln_sr(file, dest_file, force: true)
++              FileUtils.mkdir_p(file) unless File.exist?(file)
++            end
+           end
+         elsif options[:shebang]
+           io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
+@@ -388,7 +399,8 @@ module Setup
+ #        if dest_file
+           FileUtils.mkdir_p(File.dirname(dest_file))
+           if options[:symlink]
+-            FileUtils.ln_s(file, dest_file, force: true)
++            io.puts "    кккккккк2 -> #{file} : #{dest_file}"
++            FileUtils.ln_sr(file, dest_file, force: true)
+           else
+             io.puts "'#{file}' -> '#{dest_file}'"
+             FileUtils.install(file, dest_file, mode: options[:mode])
+@@ -431,7 +443,8 @@ module Setup
+         dfile = destination(link_to, from)
+         FileUtils.rm_f(dfile)
+         FileUtils.mkdir_p(File.dirname(dfile))
+-        FileUtils.ln_s(dest, dfile)
++            io.puts "    кккккккк3 -> #{dest} : #{dfile}"
++        FileUtils.ln_sr(dest, dfile)
+       end
+ 
+       record_installation(dest) # record file as installed
 diff --git a/lib/setup/loader.rb b/lib/setup/loader.rb
 index 965b621..2a1806a 100644
 --- a/lib/setup/loader.rb
@@ -2261,7 +2434,7 @@ index 40bf0e7..a71c175 100644
  end
  
 diff --git a/lib/setup/source/base.rb b/lib/setup/source/base.rb
-index 940dbbc..15d7287 100644
+index 940dbbc..2a42fef 100644
 --- a/lib/setup/source/base.rb
 +++ b/lib/setup/source/base.rb
 @@ -4,7 +4,8 @@ require 'setup/log'
@@ -2274,7 +2447,16 @@ index 940dbbc..15d7287 100644
  
     DL_DIRS     = ->(s) { ".so.#{s.name}#{RbConfig::CONFIG['sitearchdir']}" }
     RI_DIRS     = ->(s) { [ s.default_ridir, 'ri' ] }
-@@ -26,13 +27,13 @@ class Setup::Source::Base
+@@ -19,20 +20,21 @@ class Setup::Source::Base
+    SUP_DIRS    = %w(util yardoc benchmarks examples .git vendor sample)
+    LOG_DIRS    = %w(log)
+    DATA_DIRS   = %w(.)
+-   STATE_DIRS  = %w(tmp)
++   ALL_DIRS    = %w(.)
++   STATE_DIRS  = %w(tmp ext)
+    DOCSRC_DIRS = ->(s) { s.libdirs | s.appdirs | s.exedirs | s.confdirs }
+ 
+    DL_RE       = ->(_) { /\.(#{RbConfig::CONFIG['DLEXT']}|build_complete)$/ }
     RI_RE       = /\.ri$/
     INC_RE      = /\.(h|hpp)$/
     MAN_RE      = /\.[1-8](.ronn)?$/
@@ -2283,14 +2465,15 @@ index 940dbbc..15d7287 100644
     DATA_RE     = ->(s) do
           dirs = s.extdirs | s.libdirs | s.appdirs | s.exedirs |
              s.confdirs | s.testdirs | s.mandirs | s.supdirs |
-             s.ridirs | s.dldirs | s.incdirs | s.logdirs | s.statedirs
+-            s.ridirs | s.dldirs | s.incdirs | s.logdirs | s.statedirs
++            s.ridirs | s.dldirs | s.incdirs | s.logdirs
  
 -         dirs.empty? && /.*/ || /^(?!.*#{dirs.join('\b|').gsub('.', '\\\\.')}\b)/
 +         dirs.empty? && /.*/ || /^(?!#{dirs.join('\b|').gsub('.', '\\\\.')}\b)/
        end
     DOCSRC_RE = /\.rb$/
  
-@@ -40,11 +41,21 @@ class Setup::Source::Base
+@@ -40,11 +42,21 @@ class Setup::Source::Base
  
     OPTIONS_IN = {
        aliases: ->(o, name) { o.is_a?(Hash) && [ o[nil], o[name], o.values.map {|x|x.flatten}.select {|x|x.include?(name)}.map {|x|x.first}.flatten ].flatten.compact.uniq || o },
@@ -2313,7 +2496,7 @@ index 940dbbc..15d7287 100644
        srcridirses: :name_or_default,
        srcincdirses: :name_or_default,
        srcextdirses: :name_or_default,
-@@ -75,7 +86,7 @@ class Setup::Source::Base
+@@ -75,7 +87,7 @@ class Setup::Source::Base
        srcstatedirs: true,
     }
  
@@ -2322,7 +2505,7 @@ index 940dbbc..15d7287 100644
     attr_writer :replace_list, :source_names
  
     class << self
-@@ -132,31 +143,35 @@ class Setup::Source::Base
+@@ -132,31 +144,35 @@ class Setup::Source::Base
     end
  
     def version
@@ -2371,7 +2554,7 @@ index 940dbbc..15d7287 100644
     def dsl
        @dsl ||= options[:dsl] ||
           Setup::DSL.new(source_file,
-@@ -166,12 +181,18 @@ class Setup::Source::Base
+@@ -166,12 +182,18 @@ class Setup::Source::Base
              append_list: options[:gem_append_list])
     end
  
@@ -2393,7 +2576,7 @@ index 940dbbc..15d7287 100644
     end
  
     # dirs
-@@ -249,7 +270,7 @@ class Setup::Source::Base
+@@ -249,7 +271,7 @@ class Setup::Source::Base
     end
  
     def has_name? name
@@ -2402,7 +2585,7 @@ index 940dbbc..15d7287 100644
     end
  
     def if_file file
-@@ -274,6 +295,19 @@ class Setup::Source::Base
+@@ -274,6 +296,19 @@ class Setup::Source::Base
        end
     end
  
@@ -2422,7 +2605,7 @@ index 940dbbc..15d7287 100644
     def + other
        self.replace_list = replace_list.merge(other.replace_list)
        self.source_names = source_names | other.source_names
-@@ -282,6 +316,14 @@ class Setup::Source::Base
+@@ -282,6 +317,14 @@ class Setup::Source::Base
        self
     end
  
@@ -2437,7 +2620,7 @@ index 940dbbc..15d7287 100644
     protected
  
     def exedir
-@@ -300,14 +342,24 @@ class Setup::Source::Base
+@@ -300,14 +343,24 @@ class Setup::Source::Base
        end.flatten.compact.select { |file| if_dir(file) }
     end
  
@@ -2465,7 +2648,7 @@ index 940dbbc..15d7287 100644
  
        if block_given?
           # TODO deep_merge
-@@ -315,7 +367,7 @@ class Setup::Source::Base
+@@ -315,7 +368,7 @@ class Setup::Source::Base
        end
  
        tree_in.map do |dir, files_in|
@@ -2474,7 +2657,7 @@ index 940dbbc..15d7287 100644
              files_in.select do |file|
                 re =~ file && File.file?(file) && (!prc || prc[self, file, dir])
              end
-@@ -336,6 +388,16 @@ class Setup::Source::Base
+@@ -336,6 +389,16 @@ class Setup::Source::Base
     end
  
     def initialize options_in = {}
@@ -2520,7 +2703,7 @@ index 0000000..7cf674b
 +   end
 +end
 diff --git a/lib/setup/source/gem.rb b/lib/setup/source/gem.rb
-index c332f3c..174435d 100644
+index c332f3c..578e4fe 100644
 --- a/lib/setup/source/gem.rb
 +++ b/lib/setup/source/gem.rb
 @@ -13,7 +13,7 @@ require 'setup/loader/git-version-gen'
@@ -2655,7 +2838,7 @@ index c332f3c..174435d 100644
     def name
        spec && spec.name
     end
-@@ -160,33 +167,37 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -160,33 +167,72 @@ class Setup::Source::Gem < Setup::Source::Base
     end
  
     def gemspec_path
@@ -2686,12 +2869,48 @@ index c332f3c..174435d 100644
        end
     end
  
-    # tree
--
+-   # tree
++   # +alltree+ all the files tree for gem
++   def alltree
++      @alltree ||=
++         begin
++            all_in =
++               super { {
++                  '.' =>
++                     spec.files |
++                     default_files |
++                     spec.extra_rdoc_files |
++                     spec.executables |
++                     Dir.glob(spec.bindir)
++               } }
++
++            tree_except_for(alltree, *%w(state))
++         end
++   end
+ 
++   # +datatree+ data tree for gem is thr all files except included into the group trees:
++   # ext lib exe conf test man sup log state
     def datatree
-       # TODO deep_merge
+-      # TODO deep_merge
 -      @datatree ||= super { { '.' => spec.files } }
-+      @datatree ||= super { { '.' => spec.files | default_files } }
++      @datatree ||=
++         begin
++            tree_except_for(alltree, *%w(ext lib exe conf test man sup log))
++         end
++   end
++
++   def tree_except_for hash, *trees
++      trees.reduce(hash) do |h, tree|
++         treelist_in =
++            send("#{tree}tree").map do |(root,files)|
++               files.map { |file| File.expand_path(File.join(root, file)) }
++            end.flatten
++
++         h.to_a.reduce({}) do |hh, (root, files)|
++            nlist = files.reduce([]) { |nl, file| treelist_in.include?(File.expand_path(File.join(root, file))) ? nl : nl | [file] }
++            hh.merge(root => nlist)
++         end
++      end
     end
  
     def allfiles
@@ -2705,16 +2924,22 @@ index c332f3c..174435d 100644
     end
  
     def allfiles_for list_in
-@@ -195,8 +206,22 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -195,8 +241,28 @@ class Setup::Source::Gem < Setup::Source::Base
        end.to_h
     end
  
 +
 +   def libdirs
 +      @libdirs ||=
-+         (libs = spec.require_paths.select {|x| File.directory?(File.join(root, x)) }
++         begin
++            libs = spec.require_paths.select {|x| File.directory?(File.join(root, x)) }
 +
-+         libs.empty? && super || libs)
++            libs.empty? && super || libs
++         end
++   end
++
++   def libtree
++      @libtree ||= tree_except_for(super, *%w(ext exe conf test man sup log state))
 +   end
 +
     def exttree
@@ -2729,7 +2954,17 @@ index c332f3c..174435d 100644
     end
  
     def testtree
-@@ -225,13 +250,24 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -204,7 +270,8 @@ class Setup::Source::Gem < Setup::Source::Base
+    end
+ 
+    def exetree
+-      @exetree ||= super { Dir.chdir(root) do
++      @exetree ||=
++         super { Dir.chdir(root) do
+             exedirs.map { |dir| [ dir, Dir.chdir(File.join(root, dir)) { Dir.glob("{#{spec.executables.join(',')}}") } ] }.to_h
+          end }
+    end
+@@ -225,13 +292,24 @@ class Setup::Source::Gem < Setup::Source::Base
     # Returns true when name of the gem is set.
     #
     def valid?
@@ -2755,7 +2990,7 @@ index c332f3c..174435d 100644
     def to_h
        # TODO !ruby/array:Files strangely appeared during building the securecompare gem, what leads to exceptions on load
        super.merge(spec: spec.to_yaml.gsub(/!ruby\/array:Files/, ""))
-@@ -255,12 +291,11 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -255,12 +333,11 @@ class Setup::Source::Gem < Setup::Source::Base
           paths.any? && paths || ['lib'])
     end
  
@@ -2772,7 +3007,7 @@ index c332f3c..174435d 100644
     end
  
     def gemspec
-@@ -271,8 +306,8 @@ class Setup::Source::Gem < Setup::Source::Base
+@@ -271,8 +348,8 @@ class Setup::Source::Gem < Setup::Source::Base
  
     def detect_root
        if spec
