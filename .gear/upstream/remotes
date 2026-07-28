@@ -1,0 +1,3 @@
+[remote "upstream"]
+	url = git@github.com:majioa/setup.git
+	fetch = +refs/heads/*:refs/remotes/upstream/*
