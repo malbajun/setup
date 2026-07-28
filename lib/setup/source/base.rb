@@ -20,7 +20,8 @@ class Setup::Source::Base
    SUP_DIRS    = %w(util yardoc benchmarks examples .git vendor sample)
    LOG_DIRS    = %w(log)
    DATA_DIRS   = %w(.)
-   STATE_DIRS  = %w(tmp)
+   ALL_DIRS    = %w(.)
+   STATE_DIRS  = %w(tmp ext)
    DOCSRC_DIRS = ->(s) { s.libdirs | s.appdirs | s.exedirs | s.confdirs }
 
    DL_RE       = ->(_) { /\.(#{RbConfig::CONFIG['DLEXT']}|build_complete)$/ }
@@ -31,7 +32,7 @@ class Setup::Source::Base
    DATA_RE     = ->(s) do
          dirs = s.extdirs | s.libdirs | s.appdirs | s.exedirs |
             s.confdirs | s.testdirs | s.mandirs | s.supdirs |
-            s.ridirs | s.dldirs | s.incdirs | s.logdirs | s.statedirs
+            s.ridirs | s.dldirs | s.incdirs | s.logdirs
 
          dirs.empty? && /.*/ || /^(?!#{dirs.join('\b|').gsub('.', '\\\\.')}\b)/
       end

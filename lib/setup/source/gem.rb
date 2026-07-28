@@ -186,10 +186,45 @@ class Setup::Source::Gem < Setup::Source::Base
       end
    end
 
-   # tree
+   # +alltree+ all the files tree for gem
+   def alltree
+      @alltree ||=
+         begin
+            all_in =
+               super { {
+                  '.' =>
+                     spec.files |
+                     default_files |
+                     spec.extra_rdoc_files |
+                     spec.executables |
+                     Dir.glob(spec.bindir)
+               } }
+
+            tree_except_for(alltree, *%w(state))
+         end
+   end
+
+   # +datatree+ data tree for gem is thr all files except included into the group trees:
+   # ext lib exe conf test man sup log state
    def datatree
-      # TODO deep_merge
-      @datatree ||= super { { '.' => spec.files | default_files } }
+      @datatree ||=
+         begin
+            tree_except_for(alltree, *%w(ext lib exe conf test man sup log))
+         end
+   end
+
+   def tree_except_for hash, *trees
+      trees.reduce(hash) do |h, tree|
+         treelist_in =
+            send("#{tree}tree").map do |(root,files)|
+               files.map { |file| File.expand_path(File.join(root, file)) }
+            end.flatten
+
+         h.to_a.reduce({}) do |hh, (root, files)|
+            nlist = files.reduce([]) { |nl, file| treelist_in.include?(File.expand_path(File.join(root, file))) ? nl : nl | [file] }
+            hh.merge(root => nlist)
+         end
+      end
    end
 
    def allfiles
@@ -209,9 +244,15 @@ class Setup::Source::Gem < Setup::Source::Base
 
    def libdirs
       @libdirs ||=
-         (libs = spec.require_paths.select {|x| File.directory?(File.join(root, x)) }
+         begin
+            libs = spec.require_paths.select {|x| File.directory?(File.join(root, x)) }
 
-         libs.empty? && super || libs)
+            libs.empty? && super || libs
+         end
+   end
+
+   def libtree
+      @libtree ||= tree_except_for(super, *%w(ext exe conf test man sup log state))
    end
 
    def exttree
@@ -229,7 +270,8 @@ class Setup::Source::Gem < Setup::Source::Base
    end
 
    def exetree
-      @exetree ||= super { Dir.chdir(root) do
+      @exetree ||=
+         super { Dir.chdir(root) do
             exedirs.map { |dir| [ dir, Dir.chdir(File.join(root, dir)) { Dir.glob("{#{spec.executables.join(',')}}") } ] }.to_h
          end }
    end

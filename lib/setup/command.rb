@@ -60,12 +60,12 @@ module Setup
       #session = Session.new(:io=>$stdio)
       #config  = session.configuration
 
-      task = ARGV.find{ |a| a !~ /^[-]/ }
-      task = 'all' unless task
+      tasks = ARGV.select{ |a| a !~ /^[-]/ }
+      tasks = 'all' if tasks.empty?
 
       #task = 'doc' if task == 'document'
 
-      unless task_names.include?(task)
+      if (task_names | tasks) != task_names
         $stderr.puts "Not a valid task -- #{task}"
         exit 1
       end
@@ -76,21 +76,7 @@ module Setup
       parser.banner = "Usage: #{File.basename($0)} [TASK] [OPTIONS]"
 
       optparse_header(parser, options)
-      case task
-      when 'build'
-        optparse_config(parser, options)
-        optparse_document(parser, options)
-      when 'document'
-        optparse_document(parser, options)
-      when 'test'
-        optparse_test(parser, options)
-      when 'install'
-        optparse_install(parser, options)
-      when 'all'
-        optparse_all(parser, options)
-      when 'show'
-        optparse_show(parser, options)
-      end
+      optparse_all(parser, options)
       optparse_common(parser, options)
 
       begin
@@ -111,17 +97,19 @@ module Setup
         $stderr.puts "(#{RUBY_VERSION} #{RUBY_PLATFORM})"
       end
 
-      if configuration.compat
-        Setup::Base.bash(configuration.compat, task, "--prefix=#{configuration.install_prefix}")
-      end
+      tasks.each do |task|
+         if configuration.compat
+           Setup::Base.bash(configuration.compat, task, "--prefix=#{configuration.install_prefix}")
+         end
 
-      begin
-        session.apply(task)
-      rescue Error => err
-        raise err if $DEBUG
-        $stderr.puts $!.message
-        $stderr.puts "Try 'setup.rb --help' for detailed usage."
-        abort $!.message #exit 1
+         begin
+           session.apply(task)
+         rescue Error => err
+           raise err if $DEBUG
+           $stderr.puts $!.message
+           $stderr.puts "Try 'setup.rb --help' for detailed usage."
+           abort $!.message #exit 1
+         end
       end
 
       puts unless session.quiet?

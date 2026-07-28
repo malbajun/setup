@@ -13,7 +13,7 @@ module Setup::Actor::Link
          source_file = File.join(source_dir, file)
          FileUtils.mkdir_p(File.dirname(target_file))
          FileUtils.rm_rf(target_file)
-         FileUtils.ln_s(source_file, target_file, force: true)
+         FileUtils.ln_sr(source_file, target_file, force: true)
          $stdout.puts "  #{source_file} -> #{target_file}"
       end
    end

@@ -29,7 +29,6 @@ module Setup
         _install :inc
         _install :app
         _install :log
-        _install :state
         _install :test
         _install :sup
         _install :conf
@@ -81,7 +80,7 @@ module Setup
           Dir.chdir(File.join(target.source.root, dir)) do
             io.puts "  % #{target.source.name} < #{dir}" unless quiet?
 
-            novel_install_files(files, File.join(target.datadir, dir), options)
+            novel_install_files(files, File.join(target.datadir, dir), options.merge(mode: 0644))
           end
         end
       end
@@ -106,7 +105,7 @@ module Setup
           chdir(File.join(target.source.root, dir)) do
             io.puts "  % #{target.source.name} < #{dir}" unless quiet?
 
-            novel_install_files(files, target_dir, options.merge(mode: 0755))
+            novel_install_files(files, target_dir, options.merge(mode: 0644))
           end
 
           if is_external
@@ -114,7 +113,7 @@ module Setup
             #binding.pry
             novel_install_files(target.send("#{kind}dir"),
                                 target.datadir,
-                                options.merge(mode: 0755,
+                                options.merge(mode: 0644,
                                               symlink: true,
                                               as: dir))
           end
@@ -327,10 +326,16 @@ module Setup
 
         FileUtils.mkdir_p(File.dirname(dest_file))
         if options[:symlink]
-          io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
-          # FileUtils.rm_rf(dest_file)
           if !File.exist?(dest_file)
-            FileUtils.ln_s(file, dest_file, force: true)
+            if File.absolute_path?(file)
+              io.puts "    [#{chroot}]#{file} -> [#{chroot}]#{dest_file_in}"
+              FileUtils.ln_sr(File.join(chroot, file), dest_file, force: true)
+              FileUtils.mkdir_p(File.join(chroot, file)) unless File.exist?(File.join(chroot, file))
+            else
+              io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
+              FileUtils.ln_sr(file, dest_file, force: true)
+              FileUtils.mkdir_p(file) unless File.exist?(file)
+            end
           end
         elsif options[:shebang]
           io.puts "    #{file} -> [#{chroot}]#{dest_file_in}"
@@ -394,7 +399,8 @@ module Setup
 #        if dest_file
           FileUtils.mkdir_p(File.dirname(dest_file))
           if options[:symlink]
-            FileUtils.ln_s(file, dest_file, force: true)
+            io.puts "    кккккккк2 -> #{file} : #{dest_file}"
+            FileUtils.ln_sr(file, dest_file, force: true)
           else
             io.puts "'#{file}' -> '#{dest_file}'"
             FileUtils.install(file, dest_file, mode: options[:mode])
@@ -437,7 +443,8 @@ module Setup
         dfile = destination(link_to, from)
         FileUtils.rm_f(dfile)
         FileUtils.mkdir_p(File.dirname(dfile))
-        FileUtils.ln_s(dest, dfile)
+            io.puts "    кккккккк3 -> #{dest} : #{dfile}"
+        FileUtils.ln_sr(dest, dfile)
       end
 
       record_installation(dest) # record file as installed

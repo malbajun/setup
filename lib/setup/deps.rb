@@ -188,8 +188,20 @@ class Setup::Deps
          File.join(target.root, file)
       end.map do |file|
          if File.symlink?(file)
-            realfile = File.readlink(file)
-            IO.read(File.join(target.root, realfile), mode: 'rb').split("\n").first
+            realfile_in = File.readlink(file)
+            realfile =
+               if File.absolute_path?(realfile_in)
+                  realfile_in
+               else
+                  dir =
+                     if File.absolute_path?(file)
+                        File.dirname(file)
+                     else
+                        File.join(target.root, File.dirname(file))
+                     end
+                  File.join(dir, realfile_in)
+               end
+            IO.read(realfile, mode: 'rb').split("\n").first
          elsif File.exist?(file)
             IO.read(file, mode: 'rb').split("\n").first
          end
