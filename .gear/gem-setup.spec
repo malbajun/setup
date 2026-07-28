@@ -2,8 +2,8 @@
 %define        pkgname setup
 
 Name:          gem-%pkgname
-Version:       5.999.6
-Release:       alt25
+Version:       5.999.7
+Release:       alt1
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
 License:       BSD-2-Clause
@@ -15,7 +15,6 @@ Autoreq:       no
 Autoprov:      no
 
 Source:        %name-%version.tar
-Patch:         patch.patch
 
 BuildRequires(pre): rpm-build-ruby
 %add_findreq_skiplist %_libexecdir/**/*
@@ -55,7 +54,6 @@ Executable file for %gemname gem.
 
 %prep
 %setup
-%patch -p1
 
 %build
 export PATH=$PATH:$(pwd)/bin
@@ -80,12 +78,14 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
-* Tue May 26 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.6-alt25
-- ! install mode for all the files by default is 644
-- ! filter out duplicated files from lib and data groups when installation
-- - removed doc package from spec
+* Tue May 26 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.7-alt1
+- ^ 5.999.6 -> 5.999.7
 - * optimized command run to support multiple commands
 - * relaxed options filter
+- * ext folder moved to state group, which is ignored to install from now
+- - removed doc package from spec
+- ! install mode for all the files by default is 644
+- ! filter out duplicated files from lib and data groups when installation
 
 * Tue Mar 17 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.6-alt24
 - ! select version over all the sources's full path from downdir to updir

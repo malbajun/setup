@@ -1,2 +1,3 @@
-tar: @version@:.
+tar: .
+spec: .gear/gem-setup.spec
 copy?: *.patch
