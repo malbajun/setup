@@ -101,13 +101,14 @@ module Setup
             make_task
 
             # post make
-            if Dir.glob("**/*.so").any?
-              FileUtils.mkdir_p(File.join(cfg.source.root, ".so.#{cfg.source.name}", RbConfig::CONFIG['sitearchdir'], target_prefix))
-              make_task('install', DESTDIR: File.join(cfg.source.root, ".so.#{cfg.source.name}"))
-              Dir.glob(File.join(cfg.source.root, ".so.#{cfg.source.name}/**/*.so")).each do |file|
+            sos = Dir.glob("{.*,**}/{.*,**}/*.so")
+            if sos.any?
+              sos.each do |file|
                 # remove RPATH if any
                 bash(chrpath_path, '-d', file) if !chrpath_path.empty?
               end
+              FileUtils.mkdir_p(File.join(cfg.source.root, ".so.#{cfg.source.name}", RbConfig::CONFIG['sitearchdir'], target_prefix))
+              make_task('install', DESTDIR: File.join(cfg.source.root, ".so.#{cfg.source.name}"))
             end
           end
         end
