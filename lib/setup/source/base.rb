@@ -344,7 +344,7 @@ class Setup::Source::Base
    end
 
    def list_in_dir dir
-      Dir.chdir(File.join(root, dir)) { Dir.glob('**/**/*') }
+      Dir.chdir(File.join(root, dir)) { Dir.glob("{**,\.*}/{**,\.*}/{**,\.*}") }
    rescue Errno::ENOENT
       []
    end
