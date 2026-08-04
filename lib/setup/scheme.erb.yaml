@@ -6,6 +6,7 @@
          target_dir: <%= target.dldir %>
          target_prefix: <%= File.expand_path(config.install_prefix) %>
          file: <%= file %>
+         if: "target.source.compilable?"
       actor: copy
     - context:
          source_dir: <%= target.dldir %>
