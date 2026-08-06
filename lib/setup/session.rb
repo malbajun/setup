@@ -267,14 +267,14 @@ module Setup
 
       FileUtils.mkdir_p("/var/tmp/reqs")
       depper.target_req_list.each do |names, deps|
-         names.each do |name|
+         names.map {|x| x.gsub('/', '') }.each do |name|
             File.open(File.join("/var/tmp/reqs", name), "w+") { |f| f.puts(deps) }
          end
       end
 
       FileUtils.mkdir_p("/var/tmp/provs")
       depper.target_prov_list.each do |names, deps|
-         names.each do |name|
+         names.map {|x| x.gsub('/', '') }.each do |name|
             File.open(File.join("/var/tmp/provs", name), "w+") { |f| f.puts(deps) }
          end
       end
