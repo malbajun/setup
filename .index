@@ -71,7 +71,7 @@ copyrights:
 created: '2008-08-01'
 summary: Setup.rb as a stand-alone application.
 title: Setup
-version: 5.999.8
+version: 5.999.9
 name: setup
 description: ! "Every Rubyist is aware of Minero Aoki's ever useful setup.rb script.
   \nIt's how most of us used to install our Ruby programs before RubyGems\ncame along.
