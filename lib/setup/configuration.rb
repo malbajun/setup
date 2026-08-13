@@ -462,6 +462,14 @@ module Setup
         (class << self; self; end).class_eval(script)
       end
     end
+    #
+    def match_ignore? file
+       config.ignore_path_tokens.any? do |t|
+          re = t.is_a?(Regexp) && %r{(?:^|/)[^/]*#{t}[^/]*/} || %r{(?:^|/)#{t}/}
+
+          file =~ re
+       end
+    end
 
     # By default installation is to site locations, tests will
     # not be run, ri documentation will not be generated, but

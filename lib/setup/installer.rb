@@ -317,6 +317,8 @@ module Setup
       chroot = options[:chroot]
 
       source_files.each do |file|
+        next if config.match_ignore?(file)
+
         name = File.basename(options[:as] || file)
         dir = File.dirname(options[:as] || options[:dir] || file)
 
@@ -403,10 +405,10 @@ module Setup
 #        if dest_file
           FileUtils.mkdir_p(File.dirname(dest_file))
           if options[:symlink]
-            io.puts "    кккккккк2 -> #{file} : #{dest_file}"
+            io.puts "'#{file}' -> #{dest_file}"
             FileUtils.ln_sr(file, dest_file, force: true)
           else
-            io.puts "'#{file}' -> '#{dest_file}'"
+            io.puts "'#{file}' => '#{dest_file}'"
             FileUtils.install(file, dest_file, mode: options[:mode])
           end
 #        else

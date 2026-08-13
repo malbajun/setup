@@ -72,7 +72,13 @@ module Setup
         end.flatten
     end
 
-    #
+    def sos source
+      @sos ||=
+        Dir.glob(File.join(source.root, "{.*,**}", "{.*,**}", "*.so")).reject do |so|
+          @configuration.match_ignore?(so)
+        end
+    end
+
     def make
       chrpath_path = `which chrpath`.strip
 
@@ -80,15 +86,14 @@ module Setup
         case cfg
         when Setup::Rake
           cfg.run_task('default')
-          source = cfg.options[:source]
 
-          soes = Dir.glob(File.join(source.root, "**", "*.so"))
-          if soes.any?
+          sos = sos(cfg.options[:source])
+          if sos.any?
               # NOTE gem hotwater
               dd = File.join(source.root, ".so.#{source.name}", RbConfig::CONFIG['sitearchdir'])
               FileUtils.mkdir_p(dd)
 
-              soes.map do |x|
+              sos.map do |x|
                 FileUtils.cp(x, dd)
                 bash(chrpath_path, '-d', File.join(dd, File.basename(x))) if !chrpath_path.empty?
               end
@@ -96,12 +101,12 @@ module Setup
         when Extconf
           headers = Dir.glob("*/**/*.{h,hpp}")
 
+          sos = sos(cfg.source)
           Dir.chdir(cfg.extdir) do
             debug "[#{cfg.extdir}]$ make #{config.makeprog}"
             make_task
 
             # post make
-            sos = Dir.glob("{.*,**}/{.*,**}/*.so")
             if sos.any?
               sos.each do |file|
                 # remove RPATH if any

@@ -31,16 +31,23 @@ module Setup::Actor
          end.compact
       end
 
+      def objectizes
+         @objectizes ||= {}
+      end
+
       def objectize target
-         target.source.trees do |kind, h|
-            h.map do |dir, files|
-               files.map do |file|
-                  procline(file) do |actor, context_in|
-                     YAML.load(context_in.result(binding))
+         objectizes[target] ||=
+            target.source.trees do |kind, h|
+               h.map do |dir, files|
+                  files.map do |file|
+                     next if config.match_ignore?(file)
+
+                     procline(file) do |actor, context_in|
+                        YAML.load(context_in.result(binding))
+                     end
                   end
                end
-            end
-         end.flatten
+            end.flatten.compact
       end
    end
 end
