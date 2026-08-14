@@ -75,7 +75,7 @@ module Setup
     def sos source
       @sos ||=
         Dir.glob(File.join(source.root, "{.*,**}", "{.*,**}", "*.so")).reject do |so|
-          @configuration.match_ignore?(so)
+          config.match_ignore?(so)
         end
     end
 
@@ -93,22 +93,25 @@ module Setup
               dd = File.join(source.root, ".so.#{source.name}", RbConfig::CONFIG['sitearchdir'])
               FileUtils.mkdir_p(dd)
 
-              sos.map do |x|
-                FileUtils.cp(x, dd)
-                bash(chrpath_path, '-d', File.join(dd, File.basename(x))) if !chrpath_path.empty?
+              sos.each do |file|
+                Kernel.puts("so[rake]: #{dd}")
+                bash(chrpath_path, '-d', file) if !chrpath_path.empty?
+
+                FileUtils.cp(file, dd)
               end
             end
         when Extconf
           headers = Dir.glob("*/**/*.{h,hpp}")
 
-          sos = sos(cfg.source)
           Dir.chdir(cfg.extdir) do
             debug "[#{cfg.extdir}]$ make #{config.makeprog}"
             make_task
 
             # post make
+            sos = sos(cfg.source)
             if sos.any?
               sos.each do |file|
+                Kernel.puts("so[ext]: #{file}")
                 # remove RPATH if any
                 bash(chrpath_path, '-d', file) if !chrpath_path.empty?
               end
