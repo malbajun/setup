@@ -87,7 +87,8 @@ module Setup
         when Setup::Rake
           cfg.run_task('default')
 
-          sos = sos(cfg.options[:source])
+          source = cfg.options[:source]
+          sos = sos(source)
           if sos.any?
               # NOTE gem hotwater
               dd = File.join(source.root, ".so.#{source.name}", RbConfig::CONFIG['sitearchdir'])
