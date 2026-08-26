@@ -166,9 +166,9 @@ module Setup
       if value.is_a?(String)
         tokens = (value || '').split(/[,;:]/)
         tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
-           m = /^\/(?<name>.*)\/?$/.match(x)
+           tokina = x.split("/")
 
-           m && m[:name] && Regexp.new(m[:name]) || x
+           tokina.size > 1 ? %r{(?:^|/)#{tokina.join('[^\/]*')}(?:$|/)} : x
         end
       else
         value
@@ -184,9 +184,9 @@ module Setup
       if value.is_a?(String)
         tokens = (value || '').split(/[,;:]/)
         tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
-           m = /^\/(?<name>.*)\/?$/.match(x)
+           tokina = x.split("/")
 
-           m && m[:name] && Regexp.new(m[:name]) || x
+           tokina.size > 1 ? %r{(?:^|/)#{tokina.join('[^\/]*')}(?:$|/)} : x
         end
       else
         value
@@ -202,9 +202,9 @@ module Setup
       if value.is_a?(String)
         tokens = (value || '').split(/[,;:]/)
         tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
-           m = /^\/(?<name>.*)\/?$/.match(x)
+           tokina = x.split("/")
 
-           m && m[:name] && Regexp.new(m[:name]) || x
+           tokina.size > 1 ? %r{^#{tokina.join('[^\/]*')}$} : x
         end
       else
         value
@@ -220,9 +220,9 @@ module Setup
       if value.is_a?(String)
         tokens = (value || '').split(/[,;:]/)
         tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
-           m = /^\/(?<name>.*)\/?$/.match(x)
+           tokina = x.split("/")
 
-           m && m[:name] && Regexp.new(m[:name]) || x
+           tokina.size > 1 ? %r{^#{tokina.join('[^\/]*')}$} : x
         end
       else
         value
@@ -485,13 +485,13 @@ module Setup
 
     def match_ignore_token? file
        return false unless config.regard_path_tokens.empty? || !config.regard_path_tokens.any? do |t|
-          re = t.is_a?(Regexp) && %r{(?:^|/)[\/]*#{t}[\/]*(?:$|/)} || %r{(?:^|/)#{t}(?:$|/)}
+          re = t.is_a?(Regexp) && t || %r{(?:^|/)#{t}(?:$|/)}
 
           file =~ re
        end
 
        config.ignore_path_tokens.any? do |t|
-          re = t.is_a?(Regexp) && %r{(?:^|/)[\/]*#{t}[\/]*(?:$|/)} || %r{(?:^|/)#{t}(?:$|/)}
+          re = t.is_a?(Regexp) && t || %r{(?:^|/)#{t}(?:$|/)}
 
           file =~ re
        end || nil
