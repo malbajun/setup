@@ -317,17 +317,19 @@ module Setup
       chroot = options[:chroot]
 
       source_files.each do |file|
-        next if config.match_ignore?(file)
-
         name = File.basename(options[:as] || file)
         dir = File.dirname(options[:as] || options[:dir] || file)
 
         if options[:symlink]
-           #require 'pry'; binding.pry
            dest_file_in = File.expand_path(File.join(dest_dir, name))
         else
            dest_file_in = File.expand_path(File.join(dest_dir, dir, name))
         end
+        if config.match_ignore?(file)
+           io.puts "    X [#{chroot}]#{dest_file_in}"
+           next
+        end
+
         dest_file = File.join(chroot, dest_file_in)
 
         FileUtils.mkdir_p(File.dirname(dest_file))
