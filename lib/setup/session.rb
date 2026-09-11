@@ -157,7 +157,8 @@ module Setup
 
     def pre
        if defined? Rake
-          configuration.pre&.map do |task_name|
+          configuration.pre&.map do |task_name_in|
+             /^(?<ext>@)?(?<task_name>.*)/ =~ task_name_in
              project.stat_sources.each do |(source, status)|
                 if status == :valid && source.respond_to?(:rakes) and !source.rakes.blank?
                    task =
@@ -169,7 +170,11 @@ module Setup
                       stdout = $stdout
                       $stdout = $stderr
 
-                      FileUtils.chdir(source.root) { task.invoke }
+                      FileUtils.chdir(source.root) do
+                         Kernel.puts("Executing task '#{task_name}' for #{ext}")
+
+                         ext ? system("rake #{task_name}") : task.invoke
+                      end
                    rescue Exception => e
                    ensure
                       $stderr = $stdout
