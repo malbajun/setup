@@ -104,8 +104,7 @@ module Kernel
 
    def gem(gem_name, *requirements) # :doc
       if req_in = config && config.use_gem_dependencies[gem_name]
-         req = Gem::Requirement.new(req_in)
-         requirements = requirements.map {|r| Gem::Requirement.new(r).merge(req).to_s.split(",") }.flatten
+         requirements = [Gem::Requirement.new(req_in)]
       end
 
       __setup_orig_gem(gem_name, *requirements)
