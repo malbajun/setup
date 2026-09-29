@@ -1,4 +1,4 @@
 module Setup
-  VERSION = '5.999.12'  #:erb: VERSION = '<%= version %>'
+  VERSION = '5.999.13'  #:erb: VERSION = '<%= version %>'
 end
 
