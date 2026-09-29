@@ -72,6 +72,12 @@ class Hoe
          @spec.spec.dependencies << Gem::Dependency.new(name, Gem::Requirement.new([dep]), group)
       end
 
+      def extras
+         spec_extras.map do |k, v|
+            [k, v.is_a?(Proc) ? v[] : v]
+         end.to_h
+      end
+
       def spec_extras
          @extras ||= {}
       end
@@ -203,8 +209,7 @@ class Hoe
       end
 
       def post_init
-         @extras&.each { |key, value|
-           @spec.spec.send("#{key}=", value) }
+         extras.each { |key, value| @spec.spec.send("#{key}=", value) }
          @extra_dev_deps&.each do |(name, dep)|
             dependency(name, dep, :development)
          end
