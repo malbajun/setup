@@ -344,11 +344,19 @@ class Setup::DSL
       deps.map do |dep|
          next if is_required_skip?(dep)
 
-         new_req = replace_list.reduce(nil) do |s, (name, req)|
-            s || name == dep.name && req
-         end
+         group_in = :test
+         req_in =
+            replace_list.reduce(nil) do |s, (name, req)|
+               s || name == dep.name && req
+            end
+         req = req_in ? Gem::Requirement.new(req_in) : dep.requirement
+         options = {
+            "group" => dep.respond_to?(:groups) && dep.groups && !dep.groups.empty? ? dep.groups : [group_in],
+            "platforms" => dep.respond_to?(:platforms) ? dep.platforms : [],
+            "type" => dep.type
+         }
 
-         new_req && Bundler::Dependency.new(dep.name, Gem::Requirement.new([new_req]), "type" => dep.type) || dep
+         Bundler::Dependency.new(dep.name, req, options)
       end.compact | append_list
    end
 
