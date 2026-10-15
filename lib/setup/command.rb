@@ -66,7 +66,7 @@ module Setup
       #task = 'doc' if task == 'document'
 
       if (task_names | tasks) != task_names
-        $stderr.puts "Not a valid task -- #{task}"
+        $stderr.puts "#{tasks.join(", ")} task(s) are not valid"
         exit 1
       end
 
