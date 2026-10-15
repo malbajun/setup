@@ -13,6 +13,7 @@ class Setup::DSL
       test: :development,
       debug: :development,
       production: :runtime,
+      windows: nil,
       true => :runtime,
    }
 
@@ -203,7 +204,7 @@ class Setup::DSL
       def defined_groups_for *kinds_in
          kinds_in.flatten.map do |k|
             GROUP_MAPPING.map do |(g, k_in)|
-               [k_in].flatten.include?(k) && g || nil
+               [k_in].compact.flatten.include?(k) && g || nil
             end.compact
          end.flatten.select {|x| x.is_a?(Symbol) }
       end
@@ -227,7 +228,7 @@ class Setup::DSL
       end
 
       def filter_dependencies type, *depses
-         depses.map { |deps| deps.select {|x|x.type == type }}
+         depses.map { |deps| deps.select {|x| x.type && x.type == type }}
       end
    end
 
@@ -235,7 +236,7 @@ class Setup::DSL
       no_groups =
          [kinds_in].compact.flatten.map do |k|
             GROUP_MAPPING.map do |(g, k_in)|
-               k_in != k && g || nil
+               !k_in.nil? && k_in != k && g || nil
             end.compact
          end.flatten
 
@@ -332,9 +333,16 @@ class Setup::DSL
 
    protected
 
+   def is_required_skip? dep
+      skip_list.include?(dep.name) ||
+         (GROUP_MAPPING.keys & (dep.respond_to?(:groups) && dep.groups || [])).find do |group|
+            GROUP_MAPPING[group].nil?
+         end
+   end
+
    def deps_but deps
       deps.map do |dep|
-         next if skip_list.include?(dep.name)
+         next if is_required_skip?(dep)
 
          new_req = replace_list.reduce(nil) do |s, (name, req)|
             s || name == dep.name && req
