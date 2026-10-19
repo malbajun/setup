@@ -6,13 +6,15 @@
          target_dir: <%= target.dldir %>
          target_prefix: <%= File.expand_path(config.install_prefix) %>
          file: <%= file %>
-         if: "target.source.compilable?"
+         if:
+          - "target.source.compilable?"
       actor: copy
     - context:
          source_dir: <%= target.dldir %>
          target_dir: <%= File.join(target.require_fulllibdir) %>
          target_prefix: <%= File.expand_path(config.install_prefix) %>
          file: <%= file %>
+         if: "%r{/ext(/|$)} !~ '<%= File.join(target.require_fulllibdir) %>'"
       actor: link
  - match: \.build_complete$
    proc:

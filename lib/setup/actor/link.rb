@@ -4,6 +4,19 @@ module Setup::Actor::Link
    class NoFileError < StandardError ;end
 
    class << self
+      def allow c
+         target = c["target"]
+
+         case c["if"]
+         when String
+            instance_eval(c["if"])
+         when Array
+            c["if"].all? { |i| instance_eval(i) }
+         else
+            return true
+         end
+      end
+
       def apply context
          target_dir = context['target_dir'] || raise(NoDestinationDirError)
          source_dir = context['source_dir'] || raise(NoSourceDirError)

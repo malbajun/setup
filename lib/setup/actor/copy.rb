@@ -10,6 +10,8 @@ module Setup::Actor::Copy
          case c["if"]
          when String
             instance_eval(c["if"])
+         when Array
+            c["if"].all? { |i| instance_eval(i) }
          else
             return true
          end
