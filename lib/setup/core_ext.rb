@@ -112,7 +112,14 @@ module Kernel
       !MODULES[gem_name.to_s] && raise(e) || false
    end
 
+   # Loads dependencies through metadata adapters or the real task libraries.
+   # @param mod [String] library name or path accepted by Ruby's require
+   # @return [Boolean] whether Ruby loaded a new feature
+   # Rake execution bypasses adapter replacements. Other calls use a mapped
+   # adapter when available and fall back to the real library if it fails.
    def require mod
+      return __setup_orig_require(mod) if defined?(Setup::Rake) && Setup::Rake.running_tasks?
+
       if MODULES[mod]
          if MODULES[mod].is_a?(Proc)
             MODULES[mod][]

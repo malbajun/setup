@@ -155,35 +155,24 @@ module Setup
     # What #make used to be called.
     alias_method :setup, :make
 
+    # Executes configured pre-build tasks using complete in-process Rake applications.
+    # Takes no parameters.
+    # @return [Array<String>] unique executed task names; empty when none are configured
+    # Legacy @ markers are accepted without spawning Ruby. Valid and explicitly
+    # regarded sources share one execution per Rakefile. Missing tasks and task
+    # failures raise instead of allowing the build to continue without its outputs.
     def pre
-       if defined? Rake
-          configuration.pre&.map do |task_name_in|
-             /^(?<ext>@)?(?<task_name>.*)/ =~ task_name_in
-             project.stat_sources.each do |(source, status)|
-                if status == :valid && source.respond_to?(:rakes) and !source.rakes.blank?
-                   task =
-                      source.rakes.reduce(nil) do |t, rake|
-                         t || rake.tasks.select {|x|x.name == task_name}.first
-                      end
+       names = Array(configuration.pre).map {|name| name.to_s.delete_prefix('@') }.reject(&:empty?).uniq
+       return [] if names.empty?
 
-                   begin
-                      stdout = $stdout
-                      $stdout = $stderr
+       rakes = project.stat_sources.flat_map do |source, status|
+          %i(valid regarded).include?(status) && source.respond_to?(:rakes) ? source.rakes : []
+       end.compact.uniq {|rake| rake.rakefile }
+       executed = rakes.flat_map {|rake| rake.run_tasks(names, :if_defined) }.uniq
+       missing = names - executed
+       raise ArgumentError, "Rake tasks not found: #{missing.join(', ')}" unless missing.empty?
 
-                      FileUtils.chdir(source.root) do
-                         Kernel.puts("Executing task '#{task_name}' for #{ext}")
-
-                         ext ? system("rake #{task_name}") : task.invoke
-                      end
-                   rescue Exception => e
-                   ensure
-                      $stderr = $stdout
-                      $stdout = stdout
-                   end
-                end
-             end
-          end
-       end
+       executed
     end
 
     #

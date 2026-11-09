@@ -2,7 +2,7 @@
 %define        pkgname setup
 
 Name:          gem-%pkgname
-Version:       5.999.14
+Version:       5.999.15
 Release:       alt1
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
@@ -14,7 +14,8 @@ BuildArch:     noarch
 
 Source:        %name-%version.tar
 
-BuildRequires(pre): rpm-macros-ruby ruby rake
+BuildRequires(pre): rpm-macros-ruby ruby
+BuildRequires(pre): rake >= 13.0.6
 %add_findreq_skiplist %_libexecdir/**/*
 %add_findprov_skiplist %_libexecdir/**/*
 Requires:      chrpath
@@ -41,7 +42,7 @@ Group:         Development/Ruby
 BuildArch:     noarch
 Requires:      gem(setup) = %version
 Requires:      rpm-macros-ruby
-Requires:      rake
+Requires:      rake >= 13.0.6
 
 %description   -n setup-rb
 Executable file for %gemname gem.
@@ -76,6 +77,11 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
+* Mon Nov 09 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.15-alt1
+- New upstream release 5.999.15.
+- Run complete Rake plugin tasks without the external interpreter workaround.
+- Propagate task failures and preserve Rake context until parallel workers finish.
+
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
 - ! fixed to reconstruct Gemfile deps defaulting blank group to test
