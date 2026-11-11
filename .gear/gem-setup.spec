@@ -2,7 +2,7 @@
 %define        pkgname setup
 
 Name:          gem-%pkgname
-Version:       5.999.14
+Version:       5.999.14.1
 Release:       alt1
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
@@ -15,6 +15,7 @@ BuildArch:     noarch
 Source:        %name-%version.tar
 
 BuildRequires(pre): rpm-macros-ruby ruby rake
+BuildRequires: gem(minitest)
 %add_findreq_skiplist %_libexecdir/**/*
 %add_findprov_skiplist %_libexecdir/**/*
 Requires:      chrpath
@@ -63,7 +64,7 @@ export PATH=$PATH:$(pwd)/bin
 
 %check
 export PATH=$PATH:$(pwd)/bin
-%__setup_rb test
+%__ruby -Ilib test/dependency_ranges_and_explicit_tests_test.rb
 
 %files
 %doc README* HISTORY*
@@ -76,6 +77,11 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
+* Wed Nov 11 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14.1-alt1
+- ^ 5.999.14 -> 5.999.14.1
+- ! preserve all bounds of repeated gem dependency constraints
+- ! run explicit test requests and propagate failures
+
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
 - ! fixed to reconstruct Gemfile deps defaulting blank group to test

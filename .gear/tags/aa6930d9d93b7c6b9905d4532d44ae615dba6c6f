@@ -1,0 +1,6 @@
+object 512faf25888c340cfd5740ca05f2dd587c5a70f2
+type commit
+tag 5.999.14.1
+tagger Dneslov Godovy <dneslov@gmail.com> 1794342651 +0000
+
+setup 5.999.14.1: preserve dependency ranges and run explicit tests
