@@ -79,6 +79,9 @@ module Setup
       optparse_all(parser, options)
       optparse_common(parser, options)
 
+      # An explicit test task runs by default; --no-test can still opt out.
+      configuration.no_test = false if tasks.include?('test')
+
       begin
         parser.parse!(ARGV)
       rescue OptionParser::InvalidOption
@@ -103,7 +106,8 @@ module Setup
          end
 
          begin
-           session.apply(task)
+           ok = session.apply(task)
+           raise Error, 'Tests failed' if task == 'test' && !ok
          rescue Error => err
            raise err if $DEBUG
            $stderr.puts $!.message
@@ -208,10 +212,6 @@ module Setup
       parser.on('--type TYPE', "install location mode (auto,site,ruby,home,gem)") do |val|
         configuration.type = val
       end
-      # test can be override config
-      parser.on('-t', '--[no-]test', "run pre-installation tests") do |bool|
-        configuration.test = bool
-      end
       # file accounting mode
       parser.on('-m', '--mode MODE', "file accounting mode (flex,strict)") do |bool|
         configuration.mode = bool
@@ -237,8 +237,8 @@ module Setup
     def optparse_test(parser, options)
       parser.separator ""
       parser.separator "Test options:"
-      parser.on("-t", "--[no-]test", "run tests (default is --no-test)") do |val|
-        configuration.no_test = val
+      parser.on("-t", "--[no-]test", "run tests (enabled by default for the test task only)") do |val|
+        configuration.no_test = !val
       end
       #parser.on("--runner TYPE", "Test runner (auto|console|gtk|gtk2|tk)") do |val|
       #  ENV['RUBYSETUP_TESTRUNNER'] = val

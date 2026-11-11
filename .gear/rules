@@ -1,3 +1,2 @@
-tar: .
+tar: 5.999.15:.
 spec: .gear/gem-setup.spec
-copy?: *.patch

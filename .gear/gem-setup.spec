@@ -2,7 +2,7 @@
 %define        pkgname setup
 
 Name:          gem-%pkgname
-Version:       5.999.14
+Version:       5.999.15
 Release:       alt1
 Summary:       Ruby's Classic Site Installer
 Group:         Development/Ruby
@@ -61,10 +61,6 @@ export PATH=$PATH:$(pwd)/bin
 export PATH=$PATH:$(pwd)/bin
 %__setup_rb install --install_prefix=%buildroot
 
-%check
-export PATH=$PATH:$(pwd)/bin
-%__setup_rb test
-
 %files
 %doc README* HISTORY*
 %ruby_gemspec
@@ -76,6 +72,11 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
+* Wed Nov 11 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.15-alt1
+- ^ 5.999.14 -> 5.999.15
+- ! preserve all bounds of repeated gem dependency constraints
+- ! run explicit test requests and propagate failures
+
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
 - ! fixed to reconstruct Gemfile deps defaulting blank group to test

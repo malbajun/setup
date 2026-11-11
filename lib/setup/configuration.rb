@@ -307,11 +307,12 @@ module Setup
       @use_gem_dependencies =
       if value.is_a?(String)
         tokens = (value || ENV['RPM_RUBY_USE_GEM_DEPENDENCY_LIST'] || '').split(/[,;:]/)
-        tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
+        tokens.map(&:strip).select {|x| x.size > 0 }.each_with_object({}) do |x, dependencies|
            match = x.match(/^([^\s]+)\s+(.*)/)
 
-           [ match[1], match[2] ]
-        end.to_h
+           name, requirement = match.captures
+           dependencies[name] = dependencies.key?(name) ? Array(dependencies[name]) + [requirement] : requirement
+        end
       else
         value
       end

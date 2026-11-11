@@ -1,0 +1,6 @@
+object f5ca42311a492374d472a2f5960a2634376c6453
+type commit
+tag 5.999.15
+tagger Dneslov Godovy <dneslov@gmail.com> 1794402264 +0000
+
+setup 5.999.15: preserve dependency bounds and honor explicit test actions
