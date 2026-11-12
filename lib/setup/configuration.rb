@@ -500,8 +500,14 @@ module Setup
       end
     end
 
-    def match_ignore? file
-       res = match_ignore_name?(file)
+    # Checks installation filters with optional source-name context.
+    # @param file [String] source file or absolute installed target path
+    # @param source_name [String, nil] gem name when the file belongs to a selected source
+    # @return [Boolean, nil] whether the name/path filters exclude the file
+    # If a source name is supplied, name filters match it instead of the path.
+    # When name filters make no decision, existing path-token filtering applies.
+    def match_ignore? file, source_name: nil
+       res = match_ignore_name?(source_name || file)
 
        res.nil? ? match_ignore_token?(file) : res
     end

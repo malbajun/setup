@@ -67,7 +67,7 @@ module Setup
         if target.lexedir
           Dir.chdir(target.source.root) do
             io.puts "  % #{target.source.name}" unless quiet?
-            novel_install_files(target.exefiles, target.lexedir, options.merge(mode: 0755, symlink: true))
+            novel_install_files(target.exefiles, target.lexedir, options.merge(mode: 0755, symlink: true, source_name: target.source.name))
           end
         end
       end
@@ -311,7 +311,14 @@ module Setup
       /\.(#{dlext.join('|')})/
     end
 
-    # Novel proc to install project files.
+    # Installs selected project files or their public symlinks.
+    # @param source_files_in [String, Array<String>] files to install
+    # @param dest_dir [String] destination directory before staging
+    # @param options [Hash] installation settings; :source_name identifies a selected gem
+    # @return [Array<String>] the flattened source file list
+    # If a source name is supplied, name filters use that name rather than the
+    # absolute target path. Ignored files are skipped; other files are copied or
+    # linked according to the existing mode, shebang and symlink options.
     def novel_install_files(source_files_in, dest_dir, options = {})
       source_files = [ source_files_in ].flatten
       chroot = options[:chroot]
@@ -325,7 +332,7 @@ module Setup
         else
            dest_file_in = File.expand_path(File.join(dest_dir, dir, name))
         end
-        if config.match_ignore?(file)
+        if config.match_ignore?(file, source_name: options[:source_name])
            io.puts "    X [#{chroot}]#{dest_file_in}"
            next
         end
