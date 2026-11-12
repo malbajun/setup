@@ -197,41 +197,78 @@ module Setup
        @regard_path_tokens || []
     end
 
+    # Stores ignore filters from generated RPM macros or existing configuration.
+    # @param value [String, Array<String, Regexp>, nil] source name filters
+    # @return [Array<String, Regexp>, nil] decoded filters, or the unchanged non-string value
+    # Strings preserve canonical regexp wrappers and legacy separator/slash forms.
     def ignore_names= value
-      @ignore_names =
-      if value.is_a?(String)
-        tokens = (value || '').split(/[,;:]/)
-        tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
-           tokina = x.split("/")
-
-           tokina.size > 1 ? %r{^#{tokina.join('[^\/]*')}$} : x
-        end
-      else
-        value
-      end
+      @ignore_names = decode_name_filters(value)
     end
 
     def ignore_names
        @ignore_names || []
     end
 
+    # Stores regard filters from generated RPM macros or existing configuration.
+    # @param value [String, Array<String, Regexp>, nil] source name filters
+    # @return [Array<String, Regexp>, nil] decoded filters, or the unchanged non-string value
+    # Strings preserve canonical regexp wrappers and legacy separator/slash forms.
     def regard_names= value
-      @regard_names =
-      if value.is_a?(String)
-        tokens = (value || '').split(/[,;:]/)
-        tokens.map(&:strip).select {|x| x.size > 0 }.map do |x|
-           tokina = x.split("/")
-
-           tokina.size > 1 ? %r{^#{tokina.join('[^\/]*')}$} : x
-        end
-      else
-        value
-      end
+      @regard_names = decode_name_filters(value)
     end
 
     def regard_names
        @regard_names || []
     end
+
+    # Decodes a source name list without evaluating Ruby expressions.
+    # @param value [String, Array<String, Regexp>, nil] configured source filters
+    # @return [Array<String, Regexp>, nil] decoded strings/patterns or unchanged input
+    # Non-string values pass through. Canonical Regexp#to_s entries are compiled;
+    # other entries retain the legacy slash-pattern conversion or remain literal.
+    def decode_name_filters value
+      return value unless value.is_a?(String)
+
+      split_name_filters(value).map do |entry|
+        if entry.match?(/\A\(\?[mix-]*:/)
+          Regexp.new(entry)
+        else
+          tokens = entry.split('/')
+          tokens.size > 1 ? %r{^#{tokens.join('[^\\/]*')}$} : entry
+        end
+      end
+    end
+
+    # Splits a filter list only outside regexp groups, classes and quantifiers.
+    # @param value [String] comma-, semicolon- or colon-separated source filters
+    # @return [Array<String>] nonempty entries with regexp syntax preserved
+    # Escaped characters and separators inside balanced brackets stay in the
+    # current entry. Inside a character class, only its closing bracket is structural.
+    def split_name_filters value
+      entries = ['']
+      closing = []
+      escaped = false
+      brackets = { '(' => ')', '[' => ']', '{' => '}' }
+      value.each_char do |character|
+        entries.last << character
+        if escaped
+          escaped = false
+        elsif character == '\\'
+          escaped = true
+        elsif closing.last == ']'
+          closing.pop if character == ']'
+        elsif brackets.key?(character)
+          closing << brackets[character]
+        elsif character == closing.last
+          closing.pop
+        elsif closing.empty? && ',;:'.include?(character)
+          entries.last.chop!
+          entries << ''
+        end
+      end
+      entries.map(&:strip).reject(&:empty?)
+    end
+    private :decode_name_filters, :split_name_filters
 
     def shebang= value
        @shebang = !value.nil? && !value.empty? && value || nil
