@@ -257,7 +257,10 @@ module Setup
        @valid_sources ||= begin
           sources = stat_sources.map {|(source, status)| %i(valid regarded).include?(status) ? source : nil }.compact
           main = sources.find { |source| source.root == rootdir }
-          main && main.valid? ? sources : sources | [default_fake_source]
+          sources |= [default_fake_source] unless main && main.valid?
+          roots = sources.map(&:root)
+          sources.each { |source| source.source_roots = roots }
+          sources
        end
     end
 
