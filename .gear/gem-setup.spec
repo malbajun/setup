@@ -85,6 +85,7 @@ export PATH=$PATH:$(pwd)/bin
 - Restore generated source name regular expressions for ignore and regard filters.
 - Keep public executable links for explicitly regarded gems.
 - Keep independently installed nested sources out of ancestor file trees.
+- Apply install filters from the current configuration instead of a global instance.
 
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
