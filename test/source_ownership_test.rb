@@ -35,4 +35,29 @@ class SourceOwnershipTest < Minitest::Test
          assert File.file?(File.join(stage, gem_target.libdir, 'lib/google/apis/core/version.rb'))
       end
    end
+   def test_disabled_nested_sources_are_not_copied_into_root_application_data
+      Dir.mktmpdir('setup-disabled-ownership-') do |directory|
+         root = File.join(directory, 'google-api-ruby-client-20251103')
+         FileUtils.cp_r(File.join(__dir__, 'fixtures/google-api-ruby-client-20251103'), root)
+         File.open(File.join(root, 'Gemfile'), 'a') { |file| file.puts('gem "google-apis-core", ">= 1.4.1"') }
+         sibling = File.join(root, 'google-apis-core-extra')
+         FileUtils.mkdir_p(sibling)
+         File.write(File.join(sibling, 'keep.txt'), 'unclaimed application data')
+         stage = File.join(directory, 'stage')
+         config = Setup::Configuration.new(reset: true, install_prefix: stage)
+         config.ignore_names = ['google-apis-core']
+         project = Setup::Project.new(config, rootdir: root)
+         root_target = project.targets.find { |target| target.source.name == 'google-api-ruby-client' }
+         refute_nil root_target
+         refute project.valid_sources.any? { |source| source.name == 'google-apis-core' }
+         installer = Setup::Installer.new(project, config, quiet: true, io: StringIO.new)
+         Dir.chdir(root) { installer.install_data }
+         private_root = File.join(stage, root_target.datadir)
+         assert File.file?(File.join(private_root, 'Gemfile'))
+         assert File.file?(File.join(private_root, 'google-apis-core-extra/keep.txt'))
+         refute File.exist?(File.join(private_root, 'google-apis-core')),
+            'a disabled source must not reappear in the root application data'
+      end
+   end
+
 end
