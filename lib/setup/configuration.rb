@@ -513,13 +513,13 @@ module Setup
     end
 
     def match_ignore_name? file
-       return false unless config.regard_names.empty? || !config.regard_names.any? do |t|
+       return false unless regard_names.empty? || !regard_names.any? do |t|
           re = t.is_a?(Regexp) && t || %r{^#{t}$}
 
           file =~ re
        end
 
-       config.ignore_names.any? do |t|
+       ignore_names.any? do |t|
           re = t.is_a?(Regexp) && t || %r{^#{t}$}
 
           file =~ re
@@ -527,13 +527,13 @@ module Setup
     end
 
     def match_ignore_token? file
-       return false unless config.regard_path_tokens.empty? || !config.regard_path_tokens.any? do |t|
+       return false unless regard_path_tokens.empty? || !regard_path_tokens.any? do |t|
           re = t.is_a?(Regexp) && t || %r{(?:^|/)#{t}(?:$|/)}
 
           file =~ re
        end
 
-       config.ignore_path_tokens.any? do |t|
+       ignore_path_tokens.any? do |t|
           re = t.is_a?(Regexp) && t || %r{(?:^|/)#{t}(?:$|/)}
 
           file =~ re

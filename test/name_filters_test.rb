@@ -8,6 +8,28 @@ class NameFiltersTest < Minitest::Test
       Setup::Configuration.new(reset: true)
    end
 
+   def test_each_configuration_uses_its_own_name_and_path_filters
+      first = configuration
+      first.ignore_names = ['first']
+      first.ignore_path_tokens = ['private']
+      second = configuration
+      second.ignore_names = ['second']
+      second.ignore_path_tokens = ['temporary']
+
+      assert first.match_ignore?('first')
+      refute second.match_ignore?('first')
+      assert second.match_ignore?('second')
+      refute first.match_ignore?('second')
+      assert first.match_ignore?('private/file.rb')
+      refute second.match_ignore?('private/file.rb')
+      assert second.match_ignore?('temporary/file.rb')
+      refute first.match_ignore?('temporary/file.rb')
+      first.regard_names = ['first']
+      refute first.match_ignore?('first')
+      second.regard_path_tokens = ['temporary']
+      refute second.match_ignore?('temporary/file.rb')
+   end
+
    def test_generated_patterns_keep_flags_delimiters_and_anchors
       patterns = [/\Agoogle-apis-.+\z/, /\Agoogle-apis-(?:core|generator|discovery_v1)\z/i,
          /\A[a-z,;:]{1,3}(?:x:y)?\z/]
