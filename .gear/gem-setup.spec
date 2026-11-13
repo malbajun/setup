@@ -77,10 +77,11 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
-* Mon Nov 09 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.15-alt1
+* Fri Nov 13 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.15-alt1
 - New upstream release 5.999.15.
 - Run complete Rake plugin tasks without the external interpreter workaround.
 - Propagate task failures and preserve Rake context until parallel workers finish.
+- ! document only packaged libraries and explicit root guides
 
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
