@@ -89,6 +89,7 @@ export PATH=$PATH:$(pwd)/bin
 - Apply install filters from the current configuration instead of a global instance.
 - Run the Ruby regression suite during RPM checks and propagate failures.
 - Honor explicit source ignores when another source requires the ignored gem.
+- Keep disabled nested source files out of enclosing application data.
 
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
