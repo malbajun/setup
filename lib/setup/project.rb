@@ -258,7 +258,10 @@ module Setup
           sources = stat_sources.map {|(source, status)| %i(valid regarded).include?(status) ? source : nil }.compact
           main = sources.find { |source| source.root == rootdir }
           sources |= [default_fake_source] unless main && main.valid?
-          roots = sources.map(&:root)
+          # Ignored sources reserve their roots too; otherwise their files
+          # reappear as data of an enclosing application.
+          reserved = stat_sources.map(&:first).select(&:valid?)
+          roots = (sources | reserved).map(&:root)
           sources.each { |source| source.source_roots = roots }
           sources
        end
