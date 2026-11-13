@@ -1,4 +1,6 @@
 require 'minitest/autorun'
+require 'tmpdir'
+require 'fileutils'
 require 'setup'
 require 'setup/configuration'
 require 'setup/project'
@@ -28,6 +30,22 @@ class NameFiltersTest < Minitest::Test
       refute first.match_ignore?('first')
       second.regard_path_tokens = ['temporary']
       refute second.match_ignore?('temporary/file.rb')
+   end
+
+   def test_dependency_does_not_reenable_an_explicitly_ignored_source
+      Dir.mktmpdir('setup-source-filter-') do |directory|
+         root = File.join(directory, 'google-api-ruby-client-20251103')
+         FileUtils.cp_r(File.join(__dir__, 'fixtures/google-api-ruby-client-20251103'), root)
+         File.open(File.join(root, 'Gemfile'), 'a') { |file| file.puts('gem "google-apis-core", ">= 1.4.1"') }
+         [false, true].each do |regarded|
+            config = configuration
+            config.ignore_names = ['google-apis-core']
+            config.regard_names = regarded ? ['google-apis-core'] : []
+            project = Setup::Project.new(config, rootdir: root)
+            names = project.valid_sources.grep(Setup::Source::Gem).map(&:name)
+            assert_equal regarded, names.include?('google-apis-core')
+         end
+      end
    end
 
    def test_generated_patterns_keep_flags_delimiters_and_anchors

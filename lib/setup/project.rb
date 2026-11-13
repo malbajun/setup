@@ -201,7 +201,7 @@ module Setup
          end
 
       pre.first.flatten(1).map do |(source, status)|
-            if status == :disabled &&
+            if status == :disabled && !config.match_ignore_name?(source.name) &&
                pre[2].any? do |dep|
                   dep.name == source.name && source.is_a?(Setup::Source::Gem) &&
                   dep.requirement.satisfied_by?(source.provide.requirement.requirements.last.last)
