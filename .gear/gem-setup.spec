@@ -16,6 +16,7 @@ Source:        %name-%version.tar
 
 BuildRequires(pre): rpm-macros-ruby ruby
 BuildRequires(pre): rake >= 13.0.6
+BuildRequires: gem(minitest)
 %add_findreq_skiplist %_libexecdir/**/*
 %add_findprov_skiplist %_libexecdir/**/*
 Requires:      chrpath
@@ -64,7 +65,7 @@ export PATH=$PATH:$(pwd)/bin
 
 %check
 export PATH=$PATH:$(pwd)/bin
-%__setup_rb test
+%__ruby -Ilib .setup/test.rb --seed 58143
 
 %files
 %doc README* HISTORY*
@@ -86,6 +87,7 @@ export PATH=$PATH:$(pwd)/bin
 - Keep public executable links for explicitly regarded gems.
 - Keep independently installed nested sources out of ancestor file trees.
 - Apply install filters from the current configuration instead of a global instance.
+- Run the Ruby regression suite during RPM checks and propagate failures.
 
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
