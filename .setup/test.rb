@@ -1,2 +1,4 @@
 #!/usr/bin/env ruby
-system "cucumber -q --format progress test/features"
+Dir[File.expand_path('../test/*_test.rb', __dir__)].sort.each do |file|
+   require file
+end
