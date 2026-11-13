@@ -90,6 +90,27 @@ class Setup::Source::Base
    attr_reader :options, :source_file, :loader
    attr_writer :replace_list, :source_names
 
+   # Assigns independently packaged nested roots before collecting file trees.
+   # @param roots [Array<String>] active source directories in the same project
+   # @return [Array<String>] nested directory prefixes excluded from this source
+   # Same-directory metadata belongs to this source. A directory boundary keeps
+   # similarly named sibling paths intact. Previously collected trees are reset.
+   def source_roots= roots
+      prefix = File.expand_path(self.root) + File::SEPARATOR
+      nested = roots.map { |root| File.expand_path(root) }.uniq.select do |root|
+         root.start_with?(prefix)
+      end.map { |root| root + File::SEPARATOR }.sort
+      return nested if @nested_source_roots == nested
+
+      GROUPS.each do |kind|
+         %w(tree files).each do |suffix|
+            variable = :"@#{kind}#{suffix}"
+            remove_instance_variable(variable) if instance_variable_defined?(variable)
+         end
+      end
+      @nested_source_roots = nested
+   end
+
    class << self
       def opts
          @opts ||= ancestors.reverse.map do |a|
@@ -370,7 +391,9 @@ class Setup::Source::Base
       tree_in.map do |dir, files_in|
          files = chdir(dir) do
             files_in.select do |file|
-               re =~ file && File.file?(file) && (!prc || prc[self, file, dir])
+               re =~ file && File.file?(file) &&
+                  !File.expand_path(file).start_with?(*(@nested_source_roots || [])) &&
+                  (!prc || prc[self, file, dir])
             end
          end
 
