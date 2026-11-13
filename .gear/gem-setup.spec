@@ -83,6 +83,7 @@ export PATH=$PATH:$(pwd)/bin
 - Propagate task failures and preserve Rake context until parallel workers finish.
 - ! document only packaged libraries and explicit root guides
 - Restore generated source name regular expressions for ignore and regard filters.
+- Keep public executable links for explicitly regarded gems.
 
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
