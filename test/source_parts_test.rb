@@ -139,4 +139,18 @@ class SourcePartsTest < Minitest::Test
       assert_raises(Setup::Error) { config.with_parts = 'binary' }
    end
 
+   def test_generated_plugins_use_each_installers_own_staging_root
+      with_project('doc') do |first, _source, first_target, first_config|
+         first.install
+         first_plugin = File.join(first_config.install_prefix, first_target.plugindir, 'part-probe_plugin.rb')
+         assert File.file?(first_plugin)
+         with_project('doc') do |second, _other_source, second_target, second_config|
+            second.install
+            second_plugin = File.join(second_config.install_prefix, second_target.plugindir, 'part-probe_plugin.rb')
+            assert File.file?(second_plugin), 'a second installer must use its own staging root'
+            assert File.file?(first_plugin)
+         end
+      end
+   end
+
 end

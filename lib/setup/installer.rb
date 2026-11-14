@@ -40,7 +40,7 @@ module Setup
         targets.each do |target|
           next unless config.source_part_enabled?(target.source, config.source_core_part(target.source))
           io.puts "{#{target.source.name}}" unless quiet?
-          Setup::Actor.objectize(target).each do |context_in|
+          Setup::Actor.objectize(target, config).each do |context_in|
             context = context_in.merge("target" => target)
 
             next if context['$'].respond_to?(:allow) && !context['$'].allow(context)

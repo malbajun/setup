@@ -12,10 +12,6 @@ module Setup::Actor
          @scheme ||= YAML.load(IO.read(File.join(File.dirname(__FILE__), "scheme.erb.yaml")))
       end
 
-      def config
-         @config ||= ObjectSpace.each_object(Setup::Configuration).first
-      end
-
       def procline file
          scheme.map.with_index do |rule, index|
             match = rule['match']
@@ -31,24 +27,20 @@ module Setup::Actor
          end.compact
       end
 
-      def objectizes
-         @objectizes ||= {}
-      end
+      def objectize target, config
+         target.source.trees do |kind, h|
+            h.map do |dir, files|
+               files.map do |file|
+                  next if config.match_ignore?(file)
 
-      def objectize target
-         objectizes[target] ||=
-            target.source.trees do |kind, h|
-               h.map do |dir, files|
-                  files.map do |file|
-                     next if config.match_ignore?(file)
-
-                     procline(file) do |actor, context_in|
-                        YAML.load(context_in.result(binding))
-                     end
+                  procline(file) do |actor, context_in|
+                     YAML.load(context_in.result(binding))
                   end
                end
-            end.flatten.compact
+            end
+         end.flatten.compact
       end
+
    end
 end
 
