@@ -70,6 +70,24 @@ And is equivalent to running the two main phases in sequence.
 Where +compile+ compiles any extensions and +install+ copies project
 files to the appropriate places on your system.
 
+Individual source parts can be omitted without excluding their source roots:
+
+  $ setup-rb config --ignore-source-parts='foo:lib+doc,*:devel' --regard-source-parts='foo:doc'
+
+Selectors use literal source names or +*+, comma-separated selectors and
+++ between parts. Parts are +lib+ (gem library, gemspec and private data),
++app+ (non-gem application), +exec+ (private commands and public links),
++doc+ (RI), +devel+ (headers), or +all+. Regard overrides ignore for a part;
+whole-source and path filters still apply. Excluding RI does not remove README
+files from a retained library. Executables and headers can be installed without
+registering an omitted gem library; their RPM packages must include their private
+command directory or header links as well as the public paths.
+
+RPM integrations may export +RPM_RUBY_IGNORE_SOURCE_PART_LIST+ and
++RPM_RUBY_REGARD_SOURCE_PART_LIST+ with the same syntax before build and install.
+These override saved SetupConfig part settings; an empty value clears them.
+Explicit configuration/CLI values take precedence over these exports.
+
 For setup.rb to install a project's documentation and library files
 properly it is best to supply it was basic information about the project.
 In particular, the +name+, +version+ and +loadpath+ (if not the default `lib`).

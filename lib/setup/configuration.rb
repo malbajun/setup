@@ -6,6 +6,7 @@ require 'shellwords'
 require 'setup'
 require 'setup/core_ext'
 require 'setup/constants'
+require 'setup/source_parts'
 
 module Setup
 
@@ -88,6 +89,43 @@ module Setup
     option :'ignore-names'  , :pick, 'ignore sources with the specified comma-separated name list'
 
     option :'regard-names'  , :pick, 'regard sources with the specified comma-separated name list'
+
+    option :'ignore-source-parts', :pick, 'omit SOURCE:lib+doc+exec+devel+app installation parts; * matches all sources'
+    option :'regard-source-parts', :pick, 'retain selected source parts over ignore-source-parts'
+
+    def ignore_source_parts=(value)
+      @ignore_source_parts = Setup::SourceParts.normalize(value)
+    end
+
+    def regard_source_parts=(value)
+      @regard_source_parts = Setup::SourceParts.normalize(value)
+    end
+
+    def ignore_source_parts
+      @ignore_source_parts || {}
+    end
+
+    def regard_source_parts
+      @regard_source_parts || {}
+    end
+
+    def source_part_enabled?(source, part)
+      Setup::SourceParts.matches?(regard_source_parts, source.name, part) ||
+        !Setup::SourceParts.matches?(ignore_source_parts, source.name, part)
+    end
+
+    def source_core_part(source)
+      source.is_a?(Setup::Source::Gem) ? :lib : :app
+    end
+
+    # RPM build/install policy overrides an earlier saved SetupConfig. Explicit
+    # caller values are applied afterwards, including empty selectors to clear it.
+    def initialize_source_parts_environment
+      %w[IGNORE REGARD].each do |kind|
+        key = "RPM_RUBY_#{kind}_SOURCE_PART_LIST"
+        __send__("#{kind.downcase}_source_parts=", ENV[key]) if ENV.key?(key)
+      end
+    end
 
     option :'ignore-path-tokens' , :pick, 'ignore sources with the specified comma-separated list of path tokens'
 
@@ -482,6 +520,7 @@ module Setup
       initialize_defaults
       initialize_environment
       initialize_configfile unless values[:reset]
+      initialize_source_parts_environment
 #      initialize_gemfile
 
       values.each{ |k,v| __send__("#{k}=", v) }
