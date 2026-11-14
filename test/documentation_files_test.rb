@@ -3,6 +3,7 @@ require 'tmpdir'
 require 'fileutils'
 require 'setup'
 require 'setup/documentor'
+require 'setup/configuration'
 
 class DocumentationFilesTest < Minitest::Test
    def test_only_declared_libraries_and_explicit_root_guides_are_documented
@@ -30,7 +31,7 @@ class DocumentationFilesTest < Minitest::Test
          output = File.join(directory, 'ri-output')
          source.define_singleton_method(:default_ridir) { output }
          project = Struct.new(:valid_sources).new([source])
-         documentor = Setup::Documentor.new(project, Object.new, quiet: true)
+         documentor = Setup::Documentor.new(project, Setup::Configuration.new(reset: true), quiet: true)
          caller_directory = Dir.pwd
          documentor.exec_ri
          assert_equal caller_directory, Dir.pwd
