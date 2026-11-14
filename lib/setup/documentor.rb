@@ -42,6 +42,7 @@ module Setup
     # retaining cross-file references without recursively scanning its directories.
     def exec_ri
       project.valid_sources.reject { |s| s.docsrcfiles.empty? }.each do |source|
+        next unless config.source_part_enabled?(source, :doc)
         options = if source.is_a?(Setup::Source::Gem)
           ["--ri"]
         else

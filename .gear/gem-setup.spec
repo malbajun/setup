@@ -80,6 +80,7 @@ export PATH=$PATH:$(pwd)/bin
 %changelog
 * Fri Nov 13 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.15-alt1
 - New upstream release 5.999.15.
+- Honor --with-parts during documentation, installation and tests.
 - Run complete Rake plugin tasks without the external interpreter workaround.
 - Propagate task failures and preserve Rake context until parallel workers finish.
 - ! document only packaged libraries and explicit root guides
