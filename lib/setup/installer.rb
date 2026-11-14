@@ -38,6 +38,7 @@ module Setup
 
         io.puts "* scheme" unless quiet?
         targets.each do |target|
+          next unless config.source_part_enabled?(target.source, config.source_core_part(target.source))
           io.puts "{#{target.source.name}}" unless quiet?
           Setup::Actor.objectize(target).each do |context_in|
             context = context_in.merge("target" => target)
@@ -55,6 +56,7 @@ module Setup
       io.puts "* {exe} ->" unless quiet?
 
       targets.each do |target|
+        next unless config.source_part_enabled?(target.source, :exec)
         next if !target.source.exetree.any?
 
         target.source.exetree.each do |dir, files|
@@ -78,6 +80,7 @@ module Setup
       io.puts "* {data} ->" unless quiet?
 
       targets.each do |target|
+        next unless config.source_part_enabled?(target.source, config.source_core_part(target.source))
         next if !target.source.datatree.any?
 
         target.source.datatree.each do |dir, files|
@@ -101,6 +104,8 @@ module Setup
       io.puts "* {#{kind}} ->" unless quiet?
 
       targets.select { |t| t.source.send("#{kind}tree").any? }.each do |target|
+        part = kind == :inc ? :devel : config.source_core_part(target.source)
+        next unless config.source_part_enabled?(target.source, part)
         is_external = !target.send("#{kind}dir").include?(target.datadir)
 
         target.source.send("#{kind}tree").each do |dir, files|
@@ -130,6 +135,8 @@ module Setup
       io.puts "* {man} ->" unless quiet?
 
       targets.each do |target|
+        part = target.source.exetree.any? ? :exec : config.source_core_part(target.source)
+        next unless config.source_part_enabled?(target.source, part)
         next if !target.source.mantree.any?
 
         target.source.mantree.each do |dir, files|
@@ -167,6 +174,7 @@ module Setup
       io.puts "* {ri} ->" unless quiet?
 
       targets.each do |target|
+        next unless config.source_part_enabled?(target.source, :doc)
         next if !target.source.ritree.any?
 
         target.source.ritree.each do |dir, files|
@@ -212,6 +220,7 @@ module Setup
       io.puts "* {.gemspec} ->" unless quiet?
 
       targets.each do |target|
+        next unless config.source_part_enabled?(target.source, :lib)
         if target.source.is_a?(Setup::Source::Gem)
           io.puts "  %#{target.source.name}" unless quiet?
 
@@ -229,6 +238,7 @@ module Setup
       io.puts "* {gemfile} ->" unless quiet?
 
       targets.each do |target|
+        next unless config.source_part_enabled?(target.source, config.source_core_part(target.source))
         if (target.source.is_a?(Setup::Source::Gemfile) or
             target.source.is_a?(Setup::Source::Gem) and
             target.source.gemfile_path)

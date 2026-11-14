@@ -18,6 +18,7 @@ module Setup
 
     #
     def testable?
+      return false unless config.source_part_enabled?(nil, :check)
       if File.exist?(DEPRECATED_RUBYSCRIPT)
         warn "Must use `.setup/test.rb' instead or `.setup/testrc.rb' to support testing."
       end
