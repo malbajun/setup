@@ -134,6 +134,10 @@ take advantage of setup.rb's special features, please see the website
 and associated wiki.
 
 
+Unknown CLI options are ignored, including +--name=value+ and an optional
+following value. Known task names are retained. Known options still validate
+their arguments, so a missing required value remains an error.
+
 == Copyrights
 
 Setup.rb is copyrighted open source software.

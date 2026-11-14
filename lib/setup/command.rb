@@ -60,16 +60,6 @@ module Setup
       #session = Session.new(:io=>$stdio)
       #config  = session.configuration
 
-      tasks = ARGV.select{ |a| a !~ /^[-]/ }
-      tasks = 'all' if tasks.empty?
-
-      #task = 'doc' if task == 'document'
-
-      if (task_names | tasks) != task_names
-        $stderr.puts "#{tasks.join(", ")} task(s) are not valid"
-        exit 1
-      end
-
       parser  = OptionParser.new
       options = {}
 
@@ -79,10 +69,10 @@ module Setup
       optparse_all(parser, options)
       optparse_common(parser, options)
 
-      begin
-        parser.parse!(ARGV)
-      rescue OptionParser::InvalidOption
-        $stderr.puts $!.to_s.capitalize
+      tasks = parse_tasks(parser, ARGV)
+
+      if (task_names | tasks) != task_names
+        $stderr.puts "#{tasks.join(', ')} task(s) are not valid"
         exit 1
       end
 
@@ -113,6 +103,28 @@ module Setup
       end
 
       puts unless session.quiet?
+    end
+
+    # Ignore options introduced by newer packaging tools while retaining known
+    # option values and task order. Known malformed options still raise.
+    def parse_tasks(parser, arguments)
+      tasks = []
+      begin
+        parser.order!(arguments) { |argument| tasks << argument }
+      rescue OptionParser::InvalidOption => error
+        ignore_unknown_option_value(arguments, error)
+        retry
+      end
+      tasks.concat(arguments)
+      tasks.empty? ? ['all'] : tasks
+    end
+
+    def ignore_unknown_option_value(arguments, error)
+      return if error.args.any? { |argument| argument.include?('=') }
+      value = arguments.first
+      if value && !value.start_with?('-') && !task_names.include?(value)
+        arguments.shift
+      end
     end
 
     # Setup session.
