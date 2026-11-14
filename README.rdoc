@@ -70,6 +70,16 @@ And is equivalent to running the two main phases in sequence.
 Where +compile+ compiles any extensions and +install+ copies project
 files to the appropriate places on your system.
 
+Use +--with-parts=doc,devel,exec,check+ to select optional parts, or
++--with-parts=+ to disable them all. Omitting this option keeps all optional
+parts enabled by default. The selection is stored in SetupConfig; an explicit
+option replaces it for the current invocation and the next configuration save.
+Disabled +doc+ suppresses RI generation and installation; +devel+ suppresses
+headers; +exec+ suppresses private commands, public links and their manual pages.
+README files attached to the library remain. Libraries, root applications and
+source boundaries stay intact. RPM's +%baltix_with_parts+ macro supplies the effective
+selection through this option, including explicit RPM feature overrides.
+
 For setup.rb to install a project's documentation and library files
 properly it is best to supply it was basic information about the project.
 In particular, the +name+, +version+ and +loadpath+ (if not the default `lib`).

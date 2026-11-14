@@ -89,6 +89,28 @@ module Setup
 
     option :'regard-names'  , :pick, 'regard sources with the specified comma-separated name list'
 
+    OPTIONAL_PARTS = %w[doc devel exec check].freeze
+
+    option :'with-parts', :pick, 'enable the specified comma-separated optional parts (empty disables all)'
+
+    def with_parts=(value)
+      parts = value.nil? ? nil : Array(value).flat_map { |item| item.to_s.split(',') }.map(&:strip).reject(&:empty?).uniq
+      unknown = Array(parts) - OPTIONAL_PARTS
+      raise Setup::Error, "Unknown optional parts: #{unknown.join(', ')}" unless unknown.empty?
+      @with_parts = parts
+    end
+
+    # Keep libraries, root applications and discovered source boundaries intact.
+    def source_part_enabled?(source, part)
+      selected = part.to_s
+      enabled = !OPTIONAL_PARTS.include?(selected) || with_parts.nil? || with_parts.include?(selected)
+      enabled && !(selected == 'doc' && no_doc)
+    end
+
+    def source_core_part(source)
+      source.is_a?(Setup::Source::Gem) ? :lib : :app
+    end
+
     option :'ignore-path-tokens' , :pick, 'ignore sources with the specified comma-separated list of path tokens'
 
     option :'regard-path-tokens' , :pick, 'regard sources with the specified comma-separated list of path tokens'
