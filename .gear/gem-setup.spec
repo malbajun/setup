@@ -16,6 +16,7 @@ Source:        %name-%version.tar
 
 BuildRequires(pre): rpm-macros-ruby ruby
 BuildRequires(pre): rake >= 13.0.6
+BuildRequires: gem(minitest)
 %add_findreq_skiplist %_libexecdir/**/*
 %add_findprov_skiplist %_libexecdir/**/*
 Requires:      chrpath
@@ -64,7 +65,7 @@ export PATH=$PATH:$(pwd)/bin
 
 %check
 export PATH=$PATH:$(pwd)/bin
-%__setup_rb test
+%__ruby -Ilib .setup/test.rb --seed 58143
 
 %files
 %doc README* HISTORY*
@@ -77,10 +78,24 @@ export PATH=$PATH:$(pwd)/bin
 
 
 %changelog
-* Mon Nov 09 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.15-alt1
+* Fri Nov 13 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.15-alt1
 - New upstream release 5.999.15.
-- Run complete Rake plugin tasks without the external interpreter workaround.
-- Propagate task failures and preserve Rake context until parallel workers finish.
+- + added --with-parts for documentation, installation and tests.
+- + added forward-compatible handling of unknown CLI options.
+- ! fixed generated file staging to use each installer's configuration.
+- ran complete Rake plugin tasks without the external interpreter workaround.
+- propagated task failures and preserved Rake context until parallel workers
+  finish.
+- ! documented only packaged libraries and explicit root guides
+- restored generated source name regular expressions for ignore and regard
+  filters.
+- kept public executable links for explicitly regarded gems.
+- kept independently installed nested sources out of ancestor file trees.
+- applied install filters from the current configuration instead of a global
+  instance.
+- ran the Ruby regression suite during RPM checks and propagated failures.
+- honored explicit source ignores when another source requires the ignored gem.
+- kept disabled nested source files out of enclosing application data.
 
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
