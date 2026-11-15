@@ -83,7 +83,7 @@ export PATH=$PATH:$(pwd)/bin
 - Honor --with-parts during documentation, installation and tests.
 - Run complete Rake plugin tasks without the external interpreter workaround.
 - Propagate task failures and preserve Rake context until parallel workers finish.
-- ! document only packaged libraries and explicit root guides
+- ! restored recursive RI generation without a gemspec file whitelist
 - Restore generated source name regular expressions for ignore and regard filters.
 - Keep public executable links for explicitly regarded gems.
 - Keep independently installed nested sources out of ancestor file trees.
