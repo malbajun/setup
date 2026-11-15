@@ -34,12 +34,6 @@ module Setup
     #
     # @todo Should we run rdoc programmatically instead of shelling out?
     #
-    # Generates RI documentation from the selected source file lists.
-    # Takes no parameters.
-    # @return [Array<Setup::Source::Base>] sources with documentation inputs
-    # Gem sources use a gem RI store; other sources use the site RI store.
-    # Empty sources are skipped. Each source is documented in one invocation,
-    # retaining cross-file references without recursively scanning its directories.
     def exec_ri
       project.valid_sources.reject { |s| s.docsrcfiles.empty? }.each do |source|
         next unless config.source_part_enabled?(source, :doc)
@@ -52,27 +46,26 @@ module Setup
         @options.parse(options)
 
         Dir.chdir(source.root) do
-          files = source.docsrctree.flat_map do |dir, entries|
-            entries.map { |file| File.join(dir, file) }
+          source.docsrctree.each do |dir, files|
+            if dir == '.' || !documentate(dir)
+              Dir.chdir(dir) do
+                files.each { |file| documentate(file) }
+              end
+            end
           end
-          documentate(files)
         end
       end
     end
 
-    # Compiles an explicit list of RI source files with the prepared options.
-    # @param files [Array<String>, String] selected files relative to the source root
-    # @return [true, nil] true on success, or nil after reporting a compilation error
-    # Errors retain the existing diagnostic behavior; quiet mode omits the heading.
-    def documentate files
+    def documentate file
       begin
         rdoc = ::RDoc::RDoc.new
-        @options.files = Array(files)
+        @options.files = File.directory?(file) ? Dir["#{file}/**/*"] : [file]
         rdoc.document(@options)
 
         true
       rescue Exception => e
-        $stderr.puts "ri generation to documentate '#{files}' is failed" unless quiet?
+        $stderr.puts "ri generation to documentate '#{file}' is failed" unless quiet?
         $stderr.puts "#{e.class}: #{e.message}\n\t#{e.backtrace.join("\n\t")}"
       end
     end

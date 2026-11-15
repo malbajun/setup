@@ -35,12 +35,6 @@ class Setup::Source::Gem < Setup::Source::Base
 
    INC_FILTER  = ->(s, f, dir) { s.spec.files.include?(File.join(dir, f)) }
 
-   # Document packaged libraries and explicitly declared root Ruby guides only.
-   DOCSRC_FILTER = ->(source, file, directory) do
-      directory == '.' ? source.spec.extra_rdoc_files.include?(file) :
-         source.spec.files.include?(File.join(directory, file))
-   end
-
    OPTIONS_IN = {
       spec: true,
    }
