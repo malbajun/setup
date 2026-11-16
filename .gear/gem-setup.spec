@@ -96,6 +96,7 @@ export PATH=$PATH:$(pwd)/bin
 - ran the Ruby regression suite during RPM checks and propagated failures.
 - honored explicit source ignores when another source requires the ignored gem.
 - kept disabled nested source files out of enclosing application data.
+- kept selected library namespaces out of discovery path filtering.
 
 * Thu Oct 15 2026 Pavel Skrylev <majioa@altlinux.org> 5.999.14-alt1
 - + added default gem group behaviour to ski
