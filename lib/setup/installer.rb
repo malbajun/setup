@@ -114,7 +114,7 @@ module Setup
           chdir(File.join(target.source.root, dir)) do
             io.puts "  % #{target.source.name} < #{dir}" unless quiet?
 
-            novel_install_files(files, target_dir, options.merge(mode: 0644))
+            novel_install_files(files, target_dir, options.merge(mode: 0644, library_source: kind == :lib && target.source.name))
           end
 
           if is_external
@@ -321,13 +321,23 @@ module Setup
       /\.(#{dlext.join('|')})/
     end
 
+    def ignore_install_file?(file, options)
+      if options[:library_source]
+        config.match_ignore_name?(options[:library_source])
+      else
+        config.match_ignore?(file, source_name: options[:source_name])
+      end
+    end
+
     # Installs selected project files or their public symlinks.
     # @param source_files_in [String, Array<String>] files to install
     # @param dest_dir [String] destination directory before staging
     # @param options [Hash] installation settings; :source_name identifies a selected gem
     # @return [Array<String>] the flattened source file list
     # If a source name is supplied, name filters use that name rather than the
-    # absolute target path. Ignored files are skipped; other files are copied or
+    # absolute target path. :library_source identifies an already selected library;
+    # discovery path tokens must not filter namespaces inside its require paths.
+    # Ignored files are skipped; other files are copied or
     # linked according to the existing mode, shebang and symlink options.
     def novel_install_files(source_files_in, dest_dir, options = {})
       source_files = [ source_files_in ].flatten
@@ -342,7 +352,7 @@ module Setup
         else
            dest_file_in = File.expand_path(File.join(dest_dir, dir, name))
         end
-        if config.match_ignore?(file, source_name: options[:source_name])
+        if ignore_install_file?(file, options)
            io.puts "    X [#{chroot}]#{dest_file_in}"
            next
         end
